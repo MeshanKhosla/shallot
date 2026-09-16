@@ -39,7 +39,7 @@
       .page {
         width: min(1400px, calc(100% - 32px));
         margin: 0 auto;
-        padding: 32px 0 24px;
+        padding: 20px 0;
       }
 
       .controls {
@@ -97,7 +97,7 @@
         z-index: 1;
         display: grid;
         grid-template-columns: 1.55fr 0.8fr 0.8fr 0.8fr;
-        min-height: 510px;
+        min-height: 320px;
         border-block: 1px solid var(--line);
       }
 
@@ -107,7 +107,7 @@
         display: flex;
         min-width: 0;
         flex-direction: column;
-        padding: 18px 14px;
+        padding: 13px 14px;
         border-right: 1px dashed var(--line);
       }
 
@@ -132,8 +132,8 @@
       .node {
         position: relative;
         display: grid;
-        width: 118px;
-        height: 70px;
+        width: 108px;
+        height: 56px;
         place-items: center;
         border: 1px solid var(--line);
         border-radius: 8px;
@@ -162,8 +162,7 @@
         z-index: 4;
         top: 0;
         left: 0;
-        width: 290px;
-        min-height: 104px;
+        width: 320px;
         overflow: hidden;
         border: 1px solid rgba(23, 33, 60, 0.17);
         border-radius: 6px;
@@ -195,11 +194,11 @@
         display: flex;
         align-items: center;
         gap: 7px;
-        min-height: 32px;
-        padding: 7px 10px;
+        min-height: 28px;
+        padding: 5px 10px;
         border-bottom: 1px solid var(--line);
         color: var(--muted);
-        font-size: 0.68rem;
+        font-size: 0.76rem;
         font-weight: 700;
       }
 
@@ -226,7 +225,7 @@
         display: grid;
         grid-template-columns: 60px 1fr;
         gap: 8px;
-        padding: 8px 10px;
+        padding: 6px 10px;
       }
 
       .packet-row + .packet-row {
@@ -237,7 +236,7 @@
       .packet-row dd {
         margin: 0;
         font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-        font-size: 0.66rem;
+        font-size: 0.74rem;
         line-height: 1.4;
       }
 
@@ -285,7 +284,7 @@
         }
 
         .machine {
-          min-height: 190px;
+          min-height: 165px;
           border-right: 0;
           border-bottom: 1px dashed var(--line);
         }
@@ -295,7 +294,7 @@
         }
 
         .packet {
-          width: min(290px, calc(100% - 24px));
+          width: min(320px, calc(100% - 24px));
         }
       }
 
@@ -504,7 +503,7 @@
         const diagramRect = diagram.getBoundingClientRect();
         const nodeRect = node.getBoundingClientRect();
         const x = nodeRect.left - diagramRect.left + nodeRect.width / 2 - packet.offsetWidth / 2;
-        const y = nodeRect.top - diagramRect.top + nodeRect.height + 24;
+        const y = nodeRect.top - diagramRect.top + nodeRect.height + 14;
         const boundedX = Math.min(
           diagramRect.width - packet.offsetWidth - 10,
           Math.max(10, x),

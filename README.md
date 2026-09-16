@@ -1,8 +1,8 @@
 # Shallot
 
-![Animated Shallot request flow showing tenant identity outside the encrypted prompt](docs/flow.gif)
-
 _Onion routing for your AI gateway_
+
+![Animated Shallot request flow showing tenant identity outside the encrypted prompt](docs/flow.gif)
 
 Shallot is a proof-of-concept AI gateway split in two so that no single service sees both who sent a prompt and what it says. It exposes an OpenAI Chat Completions endpoint that works with the Vercel AI SDK.
 
