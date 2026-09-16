@@ -16,6 +16,8 @@ brew install oha
 bun run benchmark
 ```
 
+The latest checked-in run is in [`results.md`](./results.md).
+
 Bun recommends `oha`, `bombardier`, or `http_load_test` for HTTP load tests because a slower client can cap the measured server throughput. This benchmark uses `oha` for both latency and throughput and uses `Bun.nanoseconds()` for total suite time. See [Bun's benchmarking documentation](https://bun.com/docs/project/benchmarking).
 
 The defaults are:
