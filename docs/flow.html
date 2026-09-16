@@ -64,6 +64,13 @@
         border-color: var(--device);
       }
 
+      .control:disabled {
+        border-color: var(--line);
+        color: #a4aabd;
+        background: transparent;
+        cursor: not-allowed;
+      }
+
       .control:focus-visible {
         outline: 3px solid rgba(49, 87, 213, 0.2);
         outline-offset: 2px;
@@ -359,7 +366,7 @@
       </section>
 
       <nav class="controls" aria-label="Animation controls">
-        <button class="control" id="previous" type="button">Previous</button>
+        <button class="control" id="previous" type="button" disabled>Previous</button>
         <span class="step-count" id="step-count">1 / 10</span>
         <button class="control" id="toggle" type="button">Pause</button>
         <button class="control" id="next" type="button">Next</button>
@@ -509,6 +516,8 @@
         fieldTwoLabel.textContent = step.fields[1][0];
         fieldTwoValue.textContent = step.fields[1][1];
         stepCount.textContent = `${activeStep + 1} / ${steps.length}`;
+        previous.disabled = activeStep === 0;
+        next.disabled = activeStep === steps.length - 1;
         positionPacket(node);
         if (announce) {
           announcer.textContent = `${step.title}. ${step.fields[0].join(": ")}. ${step.fields[1].join(": ")}.`;
@@ -531,10 +540,12 @@
       });
 
       function moveManually(offset) {
+        const targetStep = activeStep + offset;
+        if (targetStep < 0 || targetStep >= steps.length) return;
         playing = false;
         toggle.textContent = "Play";
         clearTimeout(timer);
-        showStep(activeStep + offset);
+        showStep(targetStep);
       }
 
       previous.addEventListener("click", () => moveManually(-1));
