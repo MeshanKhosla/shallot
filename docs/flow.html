@@ -186,12 +186,6 @@
         opacity: 1;
       }
 
-      .packet.sealed {
-        border-color: #57627a;
-        color: var(--ink);
-        background: #f1f3f7;
-      }
-
       .packet.response {
         border-color: color-mix(in srgb, var(--provider) 45%, var(--line));
         background: #f2fbf8;
@@ -209,19 +203,19 @@
         font-weight: 700;
       }
 
-      .packet.sealed .packet-head {
-        color: #fff;
-        background: var(--ink);
-      }
-
-      .lock {
+      .field-lock {
         display: none;
+        flex: 0 0 auto;
         width: 12px;
         height: 12px;
       }
 
-      .packet.sealed .lock {
-        display: block;
+      .packet-row.encrypted {
+        background: #f1f3f7;
+      }
+
+      .packet-row.encrypted .field-lock {
+        display: inline-block;
       }
 
       .packet-fields {
@@ -252,6 +246,9 @@
       }
 
       .packet-row dd {
+        display: flex;
+        align-items: center;
+        gap: 6px;
         overflow-wrap: anywhere;
         font-weight: 650;
       }
@@ -347,22 +344,32 @@
 
         <div class="packet" id="packet" aria-hidden="true">
           <div class="packet-head">
-            <svg class="lock" viewBox="0 0 16 16" aria-hidden="true">
-              <path
-                fill="currentColor"
-                d="M4.5 7V5a3.5 3.5 0 1 1 7 0v2H13v8H3V7h1.5Zm1.25 0h4.5V5a2.25 2.25 0 0 0-4.5 0v2Z"
-              />
-            </svg>
             <span id="packet-title"></span>
           </div>
           <dl class="packet-fields">
-            <div class="packet-row">
+            <div class="packet-row" id="field-one-row">
               <dt id="field-one-label"></dt>
-              <dd id="field-one-value"></dd>
+              <dd>
+                <svg class="field-lock" viewBox="0 0 16 16" aria-hidden="true">
+                  <path
+                    fill="currentColor"
+                    d="M4.5 7V5a3.5 3.5 0 1 1 7 0v2H13v8H3V7h1.5Zm1.25 0h4.5V5a2.25 2.25 0 0 0-4.5 0v2Z"
+                  />
+                </svg>
+                <span id="field-one-value"></span>
+              </dd>
             </div>
-            <div class="packet-row">
+            <div class="packet-row" id="field-two-row">
               <dt id="field-two-label"></dt>
-              <dd id="field-two-value"></dd>
+              <dd>
+                <svg class="field-lock" viewBox="0 0 16 16" aria-hidden="true">
+                  <path
+                    fill="currentColor"
+                    d="M4.5 7V5a3.5 3.5 0 1 1 7 0v2H13v8H3V7h1.5Zm1.25 0h4.5V5a2.25 2.25 0 0 0-4.5 0v2Z"
+                  />
+                </svg>
+                <span id="field-two-value"></span>
+              </dd>
             </div>
           </dl>
         </div>
@@ -384,8 +391,8 @@
           node: "app-node",
           title: "Request",
           fields: [
-            ["Prompt", '"Summarize the Q3 roadmap."'],
-            ["User", "Alice"],
+            ["Prompt", '"Summarize the Q3 roadmap."', false],
+            ["Tenant", "Alice", false],
           ],
           kind: "plain",
         },
@@ -393,8 +400,8 @@
           node: "sidecar-node",
           title: "Encrypted request",
           fields: [
-            ["Prompt", "Encrypted for Exit"],
-            ["User", "Alice"],
+            ["Prompt", "Encrypted for Exit", true],
+            ["Tenant", "Alice", false],
           ],
           kind: "sealed",
         },
@@ -402,8 +409,8 @@
           node: "relay-node",
           title: "Encrypted request",
           fields: [
-            ["Prompt", "Encrypted for Exit"],
-            ["User", "Alice"],
+            ["Prompt", "Encrypted for Exit", true],
+            ["Tenant", "Alice", false],
           ],
           kind: "sealed",
         },
@@ -411,8 +418,8 @@
           node: "exit-node",
           title: "Decrypted request",
           fields: [
-            ["Prompt", '"Summarize the Q3 roadmap."'],
-            ["User", "Not sent"],
+            ["Prompt", '"Summarize the Q3 roadmap."', false],
+            ["Tenant", "Unknown", false],
           ],
           kind: "plain",
         },
@@ -420,8 +427,8 @@
           node: "provider-node",
           title: "Provider request",
           fields: [
-            ["Prompt", '"Summarize the Q3 roadmap."'],
-            ["User", "Not sent"],
+            ["Prompt", '"Summarize the Q3 roadmap."', false],
+            ["Tenant", "Unknown", false],
           ],
           kind: "plain",
         },
@@ -429,8 +436,8 @@
           node: "exit-node",
           title: "Provider response",
           fields: [
-            ["Answer", '"Q3: ship the API, audit logs, and SSO."'],
-            ["User", "Not sent"],
+            ["Answer", '"Q3: ship the API, audit logs, and SSO."', false],
+            ["Tenant", "Unknown", false],
           ],
           kind: "response",
         },
@@ -438,8 +445,8 @@
           node: "exit-node",
           title: "Encrypted response",
           fields: [
-            ["Answer", "Encrypted for Sidecar"],
-            ["User", "Not sent"],
+            ["Answer", "Encrypted for Sidecar", true],
+            ["Tenant", "Unknown", false],
           ],
           kind: "sealed",
         },
@@ -447,8 +454,8 @@
           node: "relay-node",
           title: "Encrypted response",
           fields: [
-            ["Answer", "Encrypted for Sidecar"],
-            ["User", "Alice"],
+            ["Answer", "Encrypted for Sidecar", true],
+            ["Tenant", "Alice", false],
           ],
           kind: "sealed",
         },
@@ -456,8 +463,8 @@
           node: "sidecar-node",
           title: "Decrypted response",
           fields: [
-            ["Answer", '"Q3: ship the API, audit logs, and SSO."'],
-            ["User", "Alice"],
+            ["Answer", '"Q3: ship the API, audit logs, and SSO."', false],
+            ["Tenant", "Alice", false],
           ],
           kind: "response",
         },
@@ -465,8 +472,8 @@
           node: "app-node",
           title: "Response",
           fields: [
-            ["Answer", '"Q3: ship the API, audit logs, and SSO."'],
-            ["User", "Alice"],
+            ["Answer", '"Q3: ship the API, audit logs, and SSO."', false],
+            ["Tenant", "Alice", false],
           ],
           kind: "response",
         },
@@ -475,8 +482,10 @@
       const diagram = document.querySelector("#diagram");
       const packet = document.querySelector("#packet");
       const packetTitle = document.querySelector("#packet-title");
+      const fieldOneRow = document.querySelector("#field-one-row");
       const fieldOneLabel = document.querySelector("#field-one-label");
       const fieldOneValue = document.querySelector("#field-one-value");
+      const fieldTwoRow = document.querySelector("#field-two-row");
       const fieldTwoLabel = document.querySelector("#field-two-label");
       const fieldTwoValue = document.querySelector("#field-two-value");
       const announcer = document.querySelector("#announcer");
@@ -516,14 +525,16 @@
         packetTitle.textContent = step.title;
         fieldOneLabel.textContent = step.fields[0][0];
         fieldOneValue.textContent = step.fields[0][1];
+        fieldOneRow.classList.toggle("encrypted", step.fields[0][2]);
         fieldTwoLabel.textContent = step.fields[1][0];
         fieldTwoValue.textContent = step.fields[1][1];
+        fieldTwoRow.classList.toggle("encrypted", step.fields[1][2]);
         stepCount.textContent = `${activeStep + 1} / ${steps.length}`;
         previous.disabled = activeStep === 0;
         next.disabled = activeStep === steps.length - 1;
         positionPacket(node);
         if (announce) {
-          announcer.textContent = `${step.title}. ${step.fields[0].join(": ")}. ${step.fields[1].join(": ")}.`;
+          announcer.textContent = `${step.title}. ${step.fields[0][0]}: ${step.fields[0][1]}. ${step.fields[1][0]}: ${step.fields[1][1]}.`;
         }
       }
 
