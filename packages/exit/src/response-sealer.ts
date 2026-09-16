@@ -4,7 +4,12 @@ import {
   SEALED_STREAM_CONTENT_TYPE,
 } from "@shallot/protocol";
 import { ByteQueue } from "./byte-queue.ts";
-import type { ExitConfig } from "./config.ts";
+
+interface ResponseSealingConfig {
+  responsePaddingBytes: number;
+  responseFlushMs: number;
+  maxProviderResponseBytes: number;
+}
 
 interface ReadResult {
   done?: boolean;
@@ -46,6 +51,7 @@ async function* coalesceResponseBody(
   const queue = new ByteQueue();
   let totalBytes = 0;
   let pendingRead = reader.read();
+  let reachedEnd = false;
 
   try {
     while (true) {
@@ -62,7 +68,10 @@ async function* coalesceResponseBody(
         continue;
       }
 
-      if (event.result.done === true) break;
+      if (event.result.done === true) {
+        reachedEnd = true;
+        break;
+      }
       if (!event.result.value) throw new Error("provider stream returned no data");
       totalBytes += event.result.value.byteLength;
       if (totalBytes > maxResponseBytes) {
@@ -77,6 +86,9 @@ async function* coalesceResponseBody(
       yield queue.take(maxFramePayloadBytes);
     }
   } finally {
+    if (!reachedEnd) {
+      await reader.cancel("encrypted response consumer stopped").catch(() => undefined);
+    }
     reader.releaseLock();
   }
 }
@@ -97,7 +109,7 @@ export async function sealProviderResponse(
   providerResponse: Response,
   responsePublicKey: CryptoKey,
   requestId: string,
-  config: ExitConfig,
+  config: ResponseSealingConfig,
 ): Promise<Response> {
   const sealer = await createResponseSealer(responsePublicKey, requestId);
   const maxPayloadBytes = config.responsePaddingBytes - 4;
@@ -105,57 +117,63 @@ export async function sealProviderResponse(
     throw new Error("response padding must leave room for a length prefix");
   }
 
+  const chunks = coalesceResponseBody(
+    providerResponse.body,
+    maxPayloadBytes,
+    config.responseFlushMs,
+    config.maxProviderResponseBytes,
+  );
+  let sentHead = false;
+  let sequence = 1;
+  let currentChunk: IteratorResult<Buffer> | undefined;
+  let finished = false;
+
   const stream = new ReadableStream<Uint8Array>({
-    async start(controller) {
+    async pull(controller) {
       try {
-        const head = await sealer.sealFrame(
-          encodeResponseHead({
-            status: providerResponse.status,
-            contentType: responseContentType(providerResponse),
-          }),
-          0,
-          "head",
-          false,
-          config.responsePaddingBytes,
-        );
-        controller.enqueue(serializeFrame(head));
-
-        const chunks = coalesceResponseBody(
-          providerResponse.body,
-          maxPayloadBytes,
-          config.responseFlushMs,
-          config.maxProviderResponseBytes,
-        );
-        let sequence = 1;
-        let current = await chunks.next();
-
-        if (current.done) {
-          const finalFrame = await sealer.sealFrame(
-            new Uint8Array(),
-            sequence,
-            "data",
-            true,
+        if (!sentHead) {
+          const head = await sealer.sealFrame(
+            encodeResponseHead({
+              status: providerResponse.status,
+              contentType: responseContentType(providerResponse),
+            }),
+            0,
+            "head",
+            false,
             config.responsePaddingBytes,
           );
-          controller.enqueue(serializeFrame(finalFrame));
-        } else {
-          while (!current.done) {
-            const next = await chunks.next();
-            const frame = await sealer.sealFrame(
-              current.value,
-              sequence,
-              "data",
-              next.done === true,
-              config.responsePaddingBytes,
-            );
-            controller.enqueue(serializeFrame(frame));
-            sequence += 1;
-            current = next;
-          }
+          sentHead = true;
+          controller.enqueue(serializeFrame(head));
+          return;
         }
-        controller.close();
+
+        currentChunk ??= await chunks.next();
+        const nextChunk = currentChunk.done ? currentChunk : await chunks.next();
+        const payload = currentChunk.done ? new Uint8Array() : currentChunk.value;
+        const frame = await sealer.sealFrame(
+          payload,
+          sequence,
+          "data",
+          nextChunk.done === true,
+          config.responsePaddingBytes,
+        );
+        controller.enqueue(serializeFrame(frame));
+        sequence += 1;
+        currentChunk = nextChunk;
+
+        if (nextChunk.done === true) {
+          finished = true;
+          controller.close();
+        }
       } catch (error) {
         controller.error(error);
+      }
+    },
+    async cancel(reason) {
+      if (finished) return;
+      await chunks.return(undefined);
+      if (providerResponse.body && !providerResponse.body.locked) {
+        await providerResponse.body.cancel(reason).catch(() => undefined);
       }
     },
   });
