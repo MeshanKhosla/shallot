@@ -1,3 +1,4 @@
+import { createDebugLogger } from "@shallot/observability";
 import {
   BodyTooLargeError,
   PATHS,
@@ -79,6 +80,7 @@ function proxyBody(
 
 export function createRelayServer(config: RelayConfig = loadConfig()): Server<undefined> {
   let activeRequests = 0;
+  const logger = createDebugLogger("relay");
 
   return Bun.serve({
     port: config.port,
@@ -109,6 +111,13 @@ export function createRelayServer(config: RelayConfig = loadConfig()): Server<un
           req.headers.get("authorization"),
         );
         const { envelope, rawBody } = await readEnvelope(req, config.maxEnvelopeBytes);
+        logger.debug("request.received", {
+          tenantId: tenant.id,
+          requestId: envelope.requestId,
+          keyId: envelope.keyId,
+          prompt: "[encrypted for Exit]",
+          ciphertextCharacters: envelope.ciphertext.length,
+        });
         try {
           if (!config.requestTracker.claim(tenant.id, envelope.requestId)) {
             throw new RelayHttpError(409, "Request ID was replayed", "replay_error");
@@ -138,7 +147,15 @@ export function createRelayServer(config: RelayConfig = loadConfig()): Server<un
 
         handedOff = true;
         return new Response(
-          proxyBody(responseBody, release, config.observeResponseChunk),
+          proxyBody(responseBody, release, (chunk) => {
+            logger.debug("response.chunk.received", {
+              tenantId: tenant.id,
+              requestId: envelope.requestId,
+              answer: "[encrypted for Sidecar]",
+              bytes: chunk.byteLength,
+            });
+            config.observeResponseChunk?.(chunk);
+          }),
           {
             status: 200,
             headers: {

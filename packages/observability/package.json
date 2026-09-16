@@ -1,5 +1,5 @@
 {
-  "name": "@shallot/mock-provider",
+  "name": "@shallot/observability",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -11,12 +11,8 @@
     "src"
   ],
   "scripts": {
-    "dev": "bun --watch src/main.ts",
-    "start": "bun src/main.ts",
     "test": "bun test"
   },
-  "dependencies": {
-    "@shallot/observability": "workspace:*"
-  },
+  "dependencies": {},
   "devDependencies": {}
 }

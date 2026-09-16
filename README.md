@@ -73,6 +73,17 @@ const result = await generateText({
 });
 ```
 
+### Debug each machine's view
+
+Set `SHALLOT_LOG_LEVEL=debug` on a process to print newline-delimited JSON for
+each request and response boundary. Relay logs identify the tenant but mark the
+prompt and answer as encrypted. Exit and the provider log plaintext content with
+the tenant set to `unknown`. Sidecar logs both plaintext directions on the client
+machine.
+
+Debug logs intentionally contain prompt and response text on machines allowed to
+read it. Do not enable them in production or send them to a shared log service.
+
 ## Security boundary
 
 The privacy property requires the Relay and Exit not to collude. The Relay learns tenant identity and traffic metadata. The Exit and upstream provider see the sanitized plaintext request, and the provider sees requests as coming from the Exit. If Relay and Exit records are combined, or timing is correlated, they can associate a tenant with a request.

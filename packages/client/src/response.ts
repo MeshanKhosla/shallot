@@ -1,3 +1,4 @@
+import { createDebugLogger, type DebugLogger } from "@shallot/observability";
 import {
   createResponseOpener,
   decodeResponseHead,
@@ -85,10 +86,12 @@ async function* decryptResponseFrames(
   requestId: string,
   config: SidecarConfig,
   signal: AbortSignal,
+  logger: DebugLogger,
 ): AsyncGenerator<DecryptedFrame> {
   let expectedSequence = 0;
   let sawFinal = false;
   let opener: ResponseOpener | undefined;
+  const debugDecoder = new TextDecoder();
 
   let totalBytes = 0;
 
@@ -109,6 +112,13 @@ async function* decryptResponseFrames(
       );
     }
     const payload = await opener.openFrame(frame, expectedSequence);
+    logger.debug("response.frame.decrypted", {
+      requestId,
+      sequence: frame.sequence,
+      kind: frame.kind,
+      final: frame.final,
+      plaintext: debugDecoder.decode(payload, { stream: !frame.final }),
+    });
     expectedSequence += 1;
     if (expectedSequence > config.maxResponseFrames) {
       throw new Error("encrypted response exceeds the frame limit");
@@ -137,6 +147,7 @@ async function openEncryptedResponse(
   responsePrivateKey: CryptoKey,
   requestId: string,
   config: SidecarConfig,
+  logger: DebugLogger,
 ): Promise<OpenedResponse> {
   const cancellation = new AbortController();
   const frames = decryptResponseFrames(
@@ -145,6 +156,7 @@ async function openEncryptedResponse(
     requestId,
     config,
     cancellation.signal,
+    logger,
   );
   let first: IteratorResult<DecryptedFrame>;
   let head: ResponseHead;
@@ -184,10 +196,17 @@ export async function createStreamingResponse(
   responsePrivateKey: CryptoKey,
   requestId: string,
   config: SidecarConfig,
+  logger: DebugLogger = createDebugLogger("sidecar"),
 ): Promise<Response> {
   let opened: OpenedResponse;
   try {
-    opened = await openEncryptedResponse(body, responsePrivateKey, requestId, config);
+    opened = await openEncryptedResponse(
+      body,
+      responsePrivateKey,
+      requestId,
+      config,
+      logger,
+    );
   } catch {
     throw new SidecarHttpError(
       502,
@@ -230,13 +249,20 @@ export async function createBufferedResponse(
   responsePrivateKey: CryptoKey,
   requestId: string,
   config: SidecarConfig,
+  logger: DebugLogger = createDebugLogger("sidecar"),
 ): Promise<Response> {
   const chunks: Uint8Array[] = [];
   let totalLength = 0;
   let opened: OpenedResponse;
 
   try {
-    opened = await openEncryptedResponse(body, responsePrivateKey, requestId, config);
+    opened = await openEncryptedResponse(
+      body,
+      responsePrivateKey,
+      requestId,
+      config,
+      logger,
+    );
     for await (const chunk of opened.data) {
       chunks.push(chunk);
       totalLength += chunk.byteLength;

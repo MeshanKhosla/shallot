@@ -1,3 +1,4 @@
+import { createDebugLogger } from "@shallot/observability";
 import { PATHS, sealRequest } from "@shallot/protocol";
 import type { Server } from "bun";
 import { readChatRequest } from "./chat-request.ts";
@@ -9,6 +10,8 @@ import { createBufferedResponse, createStreamingResponse } from "./response.ts";
 export function createSidecarServer(
   config: SidecarConfig = loadConfig(),
 ): Server<undefined> {
+  const logger = createDebugLogger("sidecar");
+
   return Bun.serve({
     port: config.port,
     hostname: config.hostname,
@@ -21,10 +24,20 @@ export function createSidecarServer(
 
       try {
         const chat = await readChatRequest(req, config.maxRequestBytes);
+        logger.debug("request.received", {
+          tenantCredential: req.headers.has("authorization") ? "present" : "missing",
+          request: chat.value,
+        });
         const sealed = await sealRequest(chat.body, {
           exitPublicKey: config.exitPublicKey,
           keyId: config.exitKeyId,
           paddingBytes: config.requestPaddingBytes,
+        });
+        logger.debug("request.encrypted", {
+          requestId: sealed.envelope.requestId,
+          keyId: sealed.envelope.keyId,
+          prompt: "[encrypted for Exit]",
+          ciphertextCharacters: sealed.envelope.ciphertext.length,
         });
         const relayBody = await forwardToRelay(req, sealed.envelope, config);
 
@@ -34,12 +47,14 @@ export function createSidecarServer(
               sealed.responsePrivateKey,
               sealed.envelope.requestId,
               config,
+              logger,
             )
           : await createBufferedResponse(
               relayBody,
               sealed.responsePrivateKey,
               sealed.envelope.requestId,
               config,
+              logger,
             );
       } catch (error) {
         return responseFromError(error);

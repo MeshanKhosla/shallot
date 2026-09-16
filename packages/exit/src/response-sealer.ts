@@ -1,3 +1,4 @@
+import { createDebugLogger, type DebugLogger } from "@shallot/observability";
 import {
   createResponseSealer,
   encodeResponseHead,
@@ -117,6 +118,7 @@ export async function sealProviderResponse(
   responsePublicKey: CryptoKey,
   requestId: string,
   config: ResponseSealingConfig,
+  logger: DebugLogger = createDebugLogger("exit"),
 ): Promise<Response> {
   const sealer = await createResponseSealer(responsePublicKey, requestId);
   const maxPayloadBytes = config.responsePaddingBytes - 4;
@@ -135,11 +137,18 @@ export async function sealProviderResponse(
   let sentHead = false;
   let sequence = 1;
   let finished = false;
+  const debugDecoder = new TextDecoder();
 
   const stream = new ReadableStream<Uint8Array>({
     async pull(controller) {
       try {
         if (!sentHead) {
+          logger.debug("provider.response.received", {
+            requestId,
+            status: providerResponse.status,
+            contentType: responseContentType(providerResponse),
+            tenantId: "unknown",
+          });
           const head = await sealer.sealFrame(
             encodeResponseHead({
               status: providerResponse.status,
@@ -151,12 +160,24 @@ export async function sealProviderResponse(
             config.responsePaddingBytes,
           );
           sentHead = true;
+          logger.debug("response.frame.encrypted", {
+            requestId,
+            sequence: 0,
+            kind: "head",
+            answer: "[encrypted for Sidecar]",
+          });
           controller.enqueue(serializeFrame(head));
           return;
         }
 
         const chunk = await chunks.next();
         const payload = chunk.done ? new Uint8Array() : chunk.value;
+        logger.debug("provider.response.chunk", {
+          requestId,
+          tenantId: "unknown",
+          final: chunk.done === true,
+          plaintext: debugDecoder.decode(payload, { stream: chunk.done !== true }),
+        });
         const frame = await sealer.sealFrame(
           payload,
           sequence,
@@ -164,6 +185,13 @@ export async function sealProviderResponse(
           chunk.done === true,
           config.responsePaddingBytes,
         );
+        logger.debug("response.frame.encrypted", {
+          requestId,
+          sequence,
+          kind: "data",
+          final: chunk.done === true,
+          answer: "[encrypted for Sidecar]",
+        });
         controller.enqueue(serializeFrame(frame));
         sequence += 1;
 

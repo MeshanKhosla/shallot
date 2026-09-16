@@ -1,3 +1,4 @@
+import { createDebugLogger } from "@shallot/observability";
 import type { Server } from "bun";
 import { loadConfig, type MockProviderConfig } from "./config.ts";
 import { createOpenAIResponse, parseChatRequest } from "./openai-response.ts";
@@ -5,6 +6,8 @@ import { createOpenAIResponse, parseChatRequest } from "./openai-response.ts";
 export function createMockProviderServer(
   config: MockProviderConfig = loadConfig(),
 ): Server<undefined> {
+  const logger = createDebugLogger("provider");
+
   return Bun.serve({
     port: config.port,
     hostname: config.hostname,
@@ -40,7 +43,24 @@ export function createMockProviderServer(
           authorization: req.headers.get("authorization"),
           request,
         });
-        return createOpenAIResponse(request, config.chunkDelayMs);
+        logger.debug("request.received", {
+          tenantId: "unknown",
+          request,
+        });
+        const response = createOpenAIResponse(request, config.chunkDelayMs);
+        if (logger.enabled) {
+          void response
+            .clone()
+            .text()
+            .then((body) => {
+              logger.debug("response.sent", {
+                tenantId: "unknown",
+                status: response.status,
+                body,
+              });
+            });
+        }
+        return response;
       } catch {
         return Response.json(
           { error: { message: "invalid chat request", type: "invalid_request_error" } },

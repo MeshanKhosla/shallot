@@ -14,6 +14,7 @@
       "name": "@shallot/client",
       "version": "0.1.0",
       "dependencies": {
+        "@shallot/observability": "workspace:*",
         "@shallot/protocol": "workspace:*",
       },
     },
@@ -34,11 +35,19 @@
       "name": "@shallot/exit",
       "version": "0.1.0",
       "dependencies": {
+        "@shallot/observability": "workspace:*",
         "@shallot/protocol": "workspace:*",
       },
     },
     "packages/mock-provider": {
       "name": "@shallot/mock-provider",
+      "version": "0.1.0",
+      "dependencies": {
+        "@shallot/observability": "workspace:*",
+      },
+    },
+    "packages/observability": {
+      "name": "@shallot/observability",
       "version": "0.1.0",
     },
     "packages/protocol": {
@@ -52,6 +61,7 @@
       "name": "@shallot/relay",
       "version": "0.1.0",
       "dependencies": {
+        "@shallot/observability": "workspace:*",
         "@shallot/protocol": "workspace:*",
       },
     },
@@ -94,6 +104,8 @@
     "@shallot/exit": ["@shallot/exit@workspace:packages/exit"],
 
     "@shallot/mock-provider": ["@shallot/mock-provider@workspace:packages/mock-provider"],
+
+    "@shallot/observability": ["@shallot/observability@workspace:packages/observability"],
 
     "@shallot/protocol": ["@shallot/protocol@workspace:packages/protocol"],
 

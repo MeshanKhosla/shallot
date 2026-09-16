@@ -1,3 +1,4 @@
+import { createDebugLogger } from "@shallot/observability";
 import {
   BodyTooLargeError,
   type OpenedRequestContext,
@@ -48,6 +49,8 @@ function encryptedError(error: unknown): Response {
 }
 
 export function createExitServer(config: ExitConfig = loadConfig()): Server<undefined> {
+  const logger = createDebugLogger("exit");
+
   return Bun.serve({
     port: config.port,
     hostname: config.hostname,
@@ -64,6 +67,13 @@ export function createExitServer(config: ExitConfig = loadConfig()): Server<unde
       try {
         requireRelayAuthorization(req.headers.get("authorization"), config.relayToken);
         const envelope = await readEnvelope(req, config.maxEnvelopeBytes);
+        logger.debug("request.received", {
+          tenantId: "unknown",
+          requestId: envelope.requestId,
+          keyId: envelope.keyId,
+          prompt: "[encrypted]",
+          ciphertextCharacters: envelope.ciphertext.length,
+        });
         const privateKey = config.privateKeys.get(envelope.keyId);
         if (!privateKey) {
           throw new ExitHttpError(400, "Unknown Exit key", "invalid_request_error");
@@ -84,12 +94,18 @@ export function createExitServer(config: ExitConfig = loadConfig()): Server<unde
         try {
           const plaintext = JSON.parse(opened.payload.toString("utf8"));
           sanitized = sanitizeChatRequest(plaintext, config.allowedModels);
+          logger.debug("request.decrypted", {
+            tenantId: "unknown",
+            requestId: envelope.requestId,
+            request: sanitized,
+          });
         } catch (error) {
           return await sealProviderResponse(
             encryptedError(error),
             opened.responsePublicKey,
             envelope.requestId,
             config,
+            logger,
           );
         }
 
@@ -116,6 +132,7 @@ export function createExitServer(config: ExitConfig = loadConfig()): Server<unde
           opened.responsePublicKey,
           envelope.requestId,
           config,
+          logger,
         );
       } catch (error) {
         return exitErrorResponse(error);
