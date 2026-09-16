@@ -66,12 +66,16 @@ function setup(responsePayloads: string[]) {
   servers.push(relay);
 
   const sidecar = createSidecarServer({
+    hostname: "127.0.0.1",
     port: 0,
     relayUrl: new URL(`http://127.0.0.1:${relay.port}/v1/chat/completions`),
     exitPublicKey: exitKeys.publicKey,
     exitKeyId: "local",
     requestPaddingBytes: 1024,
     maxRequestBytes: 64 * 1024,
+    maxResponseLineBytes: 64 * 1024,
+    maxResponseFrames: 100,
+    maxResponseBytes: 64 * 1024,
   });
   servers.push(sidecar);
 

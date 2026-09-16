@@ -7,6 +7,7 @@ import {
   type ResponseOpener,
   type SealedFrame,
 } from "@shallot/protocol";
+import type { SidecarConfig } from "./config.ts";
 import { SidecarHttpError } from "./errors.ts";
 
 function parseFrame(line: string): SealedFrame {
@@ -21,6 +22,7 @@ function parseFrame(line: string): SealedFrame {
 
 async function* readNdjsonLines(
   body: ReadableStream<Uint8Array>,
+  maxLineBytes: number,
 ): AsyncGenerator<string> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
@@ -31,10 +33,16 @@ async function* readNdjsonLines(
       const { done, value } = await reader.read();
       if (done) break;
       pending += decoder.decode(value, { stream: true });
+      if (pending.length > maxLineBytes && !pending.includes("\n")) {
+        throw new Error("encrypted response frame exceeds the line limit");
+      }
 
       let newline = pending.indexOf("\n");
       while (newline !== -1) {
         const line = pending.slice(0, newline).trim();
+        if (line.length > maxLineBytes) {
+          throw new Error("encrypted response frame exceeds the line limit");
+        }
         pending = pending.slice(newline + 1);
         if (line) yield line;
         newline = pending.indexOf("\n");
@@ -58,12 +66,15 @@ async function* decryptResponseFrames(
   body: ReadableStream<Uint8Array>,
   responsePrivateKey: CryptoKey,
   requestId: string,
+  config: SidecarConfig,
 ): AsyncGenerator<DecryptedFrame> {
   let expectedSequence = 0;
   let sawFinal = false;
   let opener: ResponseOpener | undefined;
 
-  for await (const line of readNdjsonLines(body)) {
+  let totalBytes = 0;
+
+  for await (const line of readNdjsonLines(body, config.maxResponseLineBytes)) {
     if (sawFinal) {
       throw new Error("Relay sent data after the final response frame");
     }
@@ -81,6 +92,13 @@ async function* decryptResponseFrames(
     }
     const payload = await opener.openFrame(frame, expectedSequence);
     expectedSequence += 1;
+    if (expectedSequence > config.maxResponseFrames) {
+      throw new Error("encrypted response exceeds the frame limit");
+    }
+    totalBytes += payload.byteLength;
+    if (totalBytes > config.maxResponseBytes) {
+      throw new Error("decrypted response exceeds the byte limit");
+    }
     sawFinal = frame.final;
     yield { kind: frame.kind, payload };
   }
@@ -99,8 +117,9 @@ async function openEncryptedResponse(
   body: ReadableStream<Uint8Array>,
   responsePrivateKey: CryptoKey,
   requestId: string,
+  config: SidecarConfig,
 ): Promise<OpenedResponse> {
-  const frames = decryptResponseFrames(body, responsePrivateKey, requestId);
+  const frames = decryptResponseFrames(body, responsePrivateKey, requestId, config);
   const first = await frames.next();
   if (first.done || first.value.kind !== "head") {
     throw new Error("encrypted response is missing its head frame");
@@ -122,10 +141,11 @@ export async function createStreamingResponse(
   body: ReadableStream<Uint8Array>,
   responsePrivateKey: CryptoKey,
   requestId: string,
+  config: SidecarConfig,
 ): Promise<Response> {
   let opened: OpenedResponse;
   try {
-    opened = await openEncryptedResponse(body, responsePrivateKey, requestId);
+    opened = await openEncryptedResponse(body, responsePrivateKey, requestId, config);
   } catch {
     throw new SidecarHttpError(
       502,
@@ -162,13 +182,14 @@ export async function createBufferedResponse(
   body: ReadableStream<Uint8Array>,
   responsePrivateKey: CryptoKey,
   requestId: string,
+  config: SidecarConfig,
 ): Promise<Response> {
   const chunks: Uint8Array[] = [];
   let totalLength = 0;
   let opened: OpenedResponse;
 
   try {
-    opened = await openEncryptedResponse(body, responsePrivateKey, requestId);
+    opened = await openEncryptedResponse(body, responsePrivateKey, requestId, config);
     for await (const chunk of opened.data) {
       chunks.push(chunk);
       totalLength += chunk.byteLength;

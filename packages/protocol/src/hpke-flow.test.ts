@@ -60,4 +60,29 @@ describe("sealed protocol", () => {
 
     await expect(opener.openFrame({ ...frame, final: false }, 0)).rejects.toThrow();
   });
+
+  test("rejects a request opened with the wrong Exit key", async () => {
+    const intendedExit = generateKeyPairSync("x25519");
+    const wrongExit = generateKeyPairSync("x25519");
+    const client = await sealRequest(Buffer.from("request"), {
+      exitPublicKey: intendedExit.publicKey,
+      keyId: "local",
+      paddingBytes: 256,
+    });
+
+    await expect(openRequest(client.envelope, wrongExit.privateKey)).rejects.toThrow();
+  });
+
+  test("authenticates the Exit key ID", async () => {
+    const exitKeys = generateKeyPairSync("x25519");
+    const client = await sealRequest(Buffer.from("request"), {
+      exitPublicKey: exitKeys.publicKey,
+      keyId: "key-one",
+      paddingBytes: 256,
+    });
+
+    await expect(
+      openRequest({ ...client.envelope, keyId: "key-two" }, exitKeys.privateKey),
+    ).rejects.toThrow();
+  });
 });

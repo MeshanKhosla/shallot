@@ -9,6 +9,7 @@ export interface RelayObservation {
 }
 
 export interface RelayConfig {
+  hostname: string;
   port: number;
   exitUrl: URL;
   exitToken: string;
@@ -51,6 +52,7 @@ export function loadConfig(): RelayConfig {
   if (!exitToken) throw new Error("RELAY_EXIT_TOKEN is required");
 
   return {
+    hostname: process.env.RELAY_HOSTNAME ?? "127.0.0.1",
     port: positiveInteger("RELAY_PORT", 8787),
     exitUrl: new URL(
       process.env.RELAY_EXIT_URL ?? "http://127.0.0.1:8786/v1/chat/completions",

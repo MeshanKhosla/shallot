@@ -1,6 +1,7 @@
 import { parseX25519PublicKey } from "@shallot/protocol";
 
 export interface SidecarConfig {
+  hostname: string;
   port: number;
   relayUrl: URL;
   exitPublicKey: ReturnType<typeof parseX25519PublicKey>;
@@ -8,6 +9,9 @@ export interface SidecarConfig {
   relayAuthorization?: string;
   requestPaddingBytes: number;
   maxRequestBytes: number;
+  maxResponseLineBytes: number;
+  maxResponseFrames: number;
+  maxResponseBytes: number;
 }
 
 function positiveInteger(name: string, fallback: number): number {
@@ -30,6 +34,7 @@ export function loadConfig(): SidecarConfig {
   );
 
   return {
+    hostname: process.env.SIDECAR_HOSTNAME ?? "127.0.0.1",
     port: positiveInteger("SIDECAR_PORT", 8788),
     relayUrl,
     exitPublicKey: parseX25519PublicKey(publicKey),
@@ -37,5 +42,8 @@ export function loadConfig(): SidecarConfig {
     relayAuthorization: process.env.SIDECAR_RELAY_AUTHORIZATION,
     requestPaddingBytes: positiveInteger("SIDECAR_REQUEST_PADDING_BYTES", 4096),
     maxRequestBytes: positiveInteger("SIDECAR_MAX_REQUEST_BYTES", 2 * 1024 * 1024),
+    maxResponseLineBytes: positiveInteger("SIDECAR_MAX_RESPONSE_LINE_BYTES", 64 * 1024),
+    maxResponseFrames: positiveInteger("SIDECAR_MAX_RESPONSE_FRAMES", 10_000),
+    maxResponseBytes: positiveInteger("SIDECAR_MAX_RESPONSE_BYTES", 16 * 1024 * 1024),
   };
 }

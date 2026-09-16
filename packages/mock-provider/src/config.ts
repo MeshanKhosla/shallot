@@ -4,6 +4,7 @@ export interface ProviderObservation {
 }
 
 export interface MockProviderConfig {
+  hostname: string;
   port: number;
   expectedApiKey?: string;
   chunkDelayMs: number;
@@ -21,6 +22,7 @@ function nonNegativeInteger(name: string, fallback: number): number {
 
 export function loadConfig(): MockProviderConfig {
   return {
+    hostname: process.env.MOCK_PROVIDER_HOSTNAME ?? "127.0.0.1",
     port: nonNegativeInteger("MOCK_PROVIDER_PORT", 8785),
     expectedApiKey: process.env.MOCK_PROVIDER_API_KEY,
     chunkDelayMs: nonNegativeInteger("MOCK_PROVIDER_CHUNK_DELAY_MS", 1),

@@ -73,6 +73,7 @@ export function createRelayServer(config: RelayConfig = loadConfig()): Server<un
 
   return Bun.serve({
     port: config.port,
+    hostname: config.hostname,
     idleTimeout: 60,
     async fetch(req) {
       const url = new URL(req.url);

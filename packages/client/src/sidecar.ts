@@ -11,6 +11,7 @@ export function createSidecarServer(
 ): Server<undefined> {
   return Bun.serve({
     port: config.port,
+    hostname: config.hostname,
     idleTimeout: 60,
     async fetch(req) {
       const url = new URL(req.url);
@@ -32,11 +33,13 @@ export function createSidecarServer(
               relayBody,
               sealed.responsePrivateKey,
               sealed.envelope.requestId,
+              config,
             )
           : await createBufferedResponse(
               relayBody,
               sealed.responsePrivateKey,
               sealed.envelope.requestId,
+              config,
             );
       } catch (error) {
         return responseFromError(error);

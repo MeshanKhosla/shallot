@@ -47,6 +47,7 @@ function encryptedError(error: unknown): Response {
 export function createExitServer(config: ExitConfig = loadConfig()): Server<undefined> {
   return Bun.serve({
     port: config.port,
+    hostname: config.hostname,
     idleTimeout: 60,
     async fetch(req) {
       const url = new URL(req.url);

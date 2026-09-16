@@ -3,6 +3,7 @@ import { parseX25519PrivateKey } from "@shallot/protocol";
 import { MemoryReplayCache, type ReplayCache } from "./replay-cache.ts";
 
 export interface ExitConfig {
+  hostname: string;
   port: number;
   relayToken: string;
   privateKeys: ReadonlyMap<string, KeyObject>;
@@ -39,6 +40,7 @@ export function loadConfig(): ExitConfig {
     .filter(Boolean);
 
   return {
+    hostname: process.env.EXIT_HOSTNAME ?? "127.0.0.1",
     port: positiveInteger("EXIT_PORT", 8786),
     relayToken,
     privateKeys: new Map([[keyId, parseX25519PrivateKey(privateKey)]]),

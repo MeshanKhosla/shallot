@@ -37,6 +37,7 @@ function setupGateway() {
   const exitKeys = generateKeyPairSync("x25519");
 
   const provider = createMockProviderServer({
+    hostname: "127.0.0.1",
     port: 0,
     expectedApiKey: PROVIDER_TOKEN,
     chunkDelayMs: 1,
@@ -45,6 +46,7 @@ function setupGateway() {
   servers.push(provider);
 
   const exit = createExitServer({
+    hostname: "127.0.0.1",
     port: 0,
     relayToken: EXIT_TOKEN,
     privateKeys: new Map([["test-key", exitKeys.privateKey]]),
@@ -68,6 +70,7 @@ function setupGateway() {
   servers.push(exit);
 
   const relay = createRelayServer({
+    hostname: "127.0.0.1",
     port: 0,
     exitUrl: new URL(`http://127.0.0.1:${exit.port}/v1/chat/completions`),
     exitToken: EXIT_TOKEN,
@@ -81,12 +84,16 @@ function setupGateway() {
   servers.push(relay);
 
   const sidecar = createSidecarServer({
+    hostname: "127.0.0.1",
     port: 0,
     relayUrl: new URL(`http://127.0.0.1:${relay.port}/v1/chat/completions`),
     exitPublicKey: exitKeys.publicKey,
     exitKeyId: "test-key",
     requestPaddingBytes: 1024,
     maxRequestBytes: 64 * 1024,
+    maxResponseLineBytes: 64 * 1024,
+    maxResponseFrames: 100,
+    maxResponseBytes: 256 * 1024,
   });
   servers.push(sidecar);
 
@@ -100,6 +107,9 @@ function setupGateway() {
 
   return {
     shallot,
+    sidecarUrl: `http://127.0.0.1:${sidecar.port}/v1/chat/completions`,
+    relayUrl: `http://127.0.0.1:${relay.port}/v1/chat/completions`,
+    exitUrl: `http://127.0.0.1:${exit.port}/v1/chat/completions`,
     relayObservations,
     providerObservations,
   };
@@ -199,5 +209,54 @@ describe("AI SDK through Shallot", () => {
     expect(itemAt(gateway.relayObservations, 0).body).not.toContain(
       "configured provider error",
     );
+  });
+
+  test("rejects an invalid tenant token before the Exit", async () => {
+    const gateway = setupGateway();
+    const response = await fetch(gateway.sidecarUrl, {
+      method: "POST",
+      headers: {
+        authorization: "Bearer wrong-tenant-token",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "mock-text",
+        messages: [{ role: "user", content: "must not reach the Exit" }],
+      }),
+    });
+
+    expect(response.status).toBe(401);
+    expect(gateway.relayObservations).toHaveLength(0);
+    expect(gateway.providerObservations).toHaveLength(0);
+  });
+
+  test("rejects replayed envelopes at the Relay and Exit", async () => {
+    const gateway = setupGateway();
+    await generateText({
+      model: gateway.shallot.chatModel("mock-text"),
+      prompt: "create one envelope",
+    });
+    const envelope = itemAt(gateway.relayObservations, 0).body;
+
+    const relayReplay = await fetch(gateway.relayUrl, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${TENANT_TOKEN}`,
+        "content-type": "application/json",
+      },
+      body: envelope,
+    });
+    expect(relayReplay.status).toBe(409);
+
+    const exitReplay = await fetch(gateway.exitUrl, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${EXIT_TOKEN}`,
+        "content-type": "application/json",
+      },
+      body: envelope,
+    });
+    expect(exitReplay.status).toBe(409);
+    expect(gateway.providerObservations).toHaveLength(1);
   });
 });
