@@ -1,3 +1,4 @@
+import { BodyTooLargeError, readLimitedBody } from "@shallot/protocol";
 import { SidecarHttpError } from "./errors.ts";
 
 export interface ChatRequest {
@@ -8,14 +9,6 @@ export interface ChatRequest {
 export interface ParsedChatRequest {
   body: Uint8Array;
   value: ChatRequest;
-}
-
-function parseContentLength(req: Request): number | undefined {
-  const header = req.headers.get("content-length");
-  if (header === null) return undefined;
-
-  const value = Number(header);
-  return Number.isSafeInteger(value) && value >= 0 ? value : undefined;
 }
 
 function parseJsonObject(body: Uint8Array): ChatRequest {
@@ -49,14 +42,14 @@ export async function readChatRequest(
   req: Request,
   maxRequestBytes: number,
 ): Promise<ParsedChatRequest> {
-  const contentLength = parseContentLength(req);
-  if (contentLength !== undefined && contentLength > maxRequestBytes) {
-    throw new SidecarHttpError(413, "request body is too large", "request_too_large");
-  }
-
-  const body = new Uint8Array(await req.arrayBuffer());
-  if (body.byteLength > maxRequestBytes) {
-    throw new SidecarHttpError(413, "request body is too large", "request_too_large");
+  let body: Uint8Array;
+  try {
+    body = await readLimitedBody(req, maxRequestBytes);
+  } catch (error) {
+    if (error instanceof BodyTooLargeError) {
+      throw new SidecarHttpError(413, "request body is too large", "request_too_large");
+    }
+    throw error;
   }
 
   return { body, value: parseJsonObject(body) };

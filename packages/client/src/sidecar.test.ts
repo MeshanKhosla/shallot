@@ -6,6 +6,7 @@ import {
   openRequest,
   parseSealedRequest,
 } from "@shallot/protocol";
+import type { SidecarConfig } from "./config.ts";
 import { createSidecarServer } from "./sidecar.ts";
 
 const servers: Array<{ stop(closeActiveConnections?: boolean): void }> = [];
@@ -14,7 +15,12 @@ afterEach(() => {
   for (const server of servers.splice(0)) server.stop(true);
 });
 
-function setup(responsePayloads: string[]) {
+type ResponseLimits = Pick<
+  SidecarConfig,
+  "maxResponseLineBytes" | "maxResponseFrames" | "maxResponseBytes"
+>;
+
+function setup(responsePayloads: string[], limits: Partial<ResponseLimits> = {}) {
   const exitKeys = generateKeyPairSync("x25519");
   let observedRequest: unknown;
   let observedAuthorization: string | null = null;
@@ -76,6 +82,7 @@ function setup(responsePayloads: string[]) {
     maxResponseLineBytes: 64 * 1024,
     maxResponseFrames: 100,
     maxResponseBytes: 64 * 1024,
+    ...limits,
   });
   servers.push(sidecar);
 
@@ -87,6 +94,45 @@ function setup(responsePayloads: string[]) {
       relaySawPlaintext,
     }),
   };
+}
+
+function setupMalformedRelay(body: string, maxResponseLineBytes = 64 * 1024) {
+  const exitKeys = generateKeyPairSync("x25519");
+  const relay = Bun.serve({
+    port: 0,
+    fetch() {
+      return new Response(body, {
+        headers: { "content-type": "application/x-ndjson" },
+      });
+    },
+  });
+  servers.push(relay);
+
+  const sidecar = createSidecarServer({
+    hostname: "127.0.0.1",
+    port: 0,
+    relayUrl: new URL(`http://127.0.0.1:${relay.port}/v1/chat/completions`),
+    exitPublicKey: exitKeys.publicKey,
+    exitKeyId: "local",
+    requestPaddingBytes: 1024,
+    maxRequestBytes: 64 * 1024,
+    maxResponseLineBytes,
+    maxResponseFrames: 100,
+    maxResponseBytes: 64 * 1024,
+  });
+  servers.push(sidecar);
+  return `http://127.0.0.1:${sidecar.port}/v1/chat/completions`;
+}
+
+async function postChat(url: string): Promise<Response> {
+  return fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      model: "example-model",
+      messages: [{ role: "user", content: "secret prompt" }],
+    }),
+  });
 }
 
 describe("sidecar", () => {
@@ -156,5 +202,30 @@ describe("sidecar", () => {
         type: "not_found_error",
       },
     });
+  });
+
+  test("rejects malformed encrypted response framing", async () => {
+    const response = await postChat(setupMalformedRelay("not-json\n"));
+
+    expect(response.status).toBe(502);
+    expect(await response.json()).toEqual({
+      error: {
+        message: "Relay returned an invalid encrypted response",
+        type: "upstream_error",
+      },
+    });
+  });
+
+  test("rejects an encrypted response line over the configured limit", async () => {
+    const response = await postChat(setupMalformedRelay(`${"x".repeat(65)}\n`, 64));
+
+    expect(response.status).toBe(502);
+  });
+
+  test("rejects an encrypted response over the frame limit", async () => {
+    const harness = setup(["{}"], { maxResponseFrames: 1 });
+    const response = await postChat(harness.url);
+
+    expect(response.status).toBe(502);
   });
 });

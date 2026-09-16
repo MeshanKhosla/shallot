@@ -27,11 +27,15 @@ async function* readNdjsonLines(
   const reader = body.getReader();
   const decoder = new TextDecoder();
   let pending = "";
+  let reachedEnd = false;
 
   try {
     while (true) {
       const { done, value } = await reader.read();
-      if (done) break;
+      if (done) {
+        reachedEnd = true;
+        break;
+      }
       pending += decoder.decode(value, { stream: true });
       if (pending.length > maxLineBytes && !pending.includes("\n")) {
         throw new Error("encrypted response frame exceeds the line limit");
@@ -53,6 +57,9 @@ async function* readNdjsonLines(
     const finalLine = pending.trim();
     if (finalLine) yield finalLine;
   } finally {
+    if (!reachedEnd) {
+      await reader.cancel("response consumer stopped").catch(() => undefined);
+    }
     reader.releaseLock();
   }
 }
@@ -155,15 +162,20 @@ export async function createStreamingResponse(
   }
 
   const stream = new ReadableStream<Uint8Array>({
-    async start(controller) {
+    async pull(controller) {
       try {
-        for await (const chunk of opened.data) {
-          controller.enqueue(chunk);
+        const chunk = await opened.data.next();
+        if (chunk.done) {
+          controller.close();
+        } else {
+          controller.enqueue(chunk.value);
         }
-        controller.close();
       } catch (error) {
         controller.error(error);
       }
+    },
+    async cancel() {
+      await opened.data.return(undefined);
     },
   });
 

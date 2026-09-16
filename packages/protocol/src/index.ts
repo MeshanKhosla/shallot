@@ -12,7 +12,12 @@ export {
   type ResponseSealer,
 } from "./frames.ts";
 export { parseX25519PrivateKey, parseX25519PublicKey } from "./hpke.ts";
-export { PATHS, SEALED_STREAM_CONTENT_TYPE } from "./http.ts";
+export {
+  BodyTooLargeError,
+  PATHS,
+  readLimitedBody,
+  SEALED_STREAM_CONTENT_TYPE,
+} from "./http.ts";
 export { padPayload, unpadPayload } from "./padding.ts";
 export {
   decodeResponseHead,

@@ -1,8 +1,10 @@
 import {
+  BodyTooLargeError,
   type OpenedRequestContext,
   openRequest,
   PATHS,
   parseSealedRequest,
+  readLimitedBody,
   type SealedRequest,
 } from "@shallot/protocol";
 import type { Server } from "bun";
@@ -14,14 +16,14 @@ import { sanitizeChatRequest } from "./sanitize-request.ts";
 import { requireRelayAuthorization } from "./service-auth.ts";
 
 async function readEnvelope(req: Request, maxBytes: number): Promise<SealedRequest> {
-  const declaredLength = Number(req.headers.get("content-length") ?? 0);
-  if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
-    throw new ExitHttpError(413, "Encrypted request is too large", "request_too_large");
-  }
-
-  const body = new Uint8Array(await req.arrayBuffer());
-  if (body.byteLength > maxBytes) {
-    throw new ExitHttpError(413, "Encrypted request is too large", "request_too_large");
+  let body: Uint8Array;
+  try {
+    body = await readLimitedBody(req, maxBytes);
+  } catch (error) {
+    if (error instanceof BodyTooLargeError) {
+      throw new ExitHttpError(413, "Encrypted request is too large", "request_too_large");
+    }
+    throw error;
   }
 
   try {

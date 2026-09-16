@@ -1,6 +1,8 @@
 import {
+  BodyTooLargeError,
   PATHS,
   parseSealedRequest,
+  readLimitedBody,
   SEALED_STREAM_CONTENT_TYPE,
   type SealedRequest,
 } from "@shallot/protocol";
@@ -13,14 +15,18 @@ async function readEnvelope(
   req: Request,
   maxBytes: number,
 ): Promise<{ envelope: SealedRequest; rawBody: string }> {
-  const declaredLength = Number(req.headers.get("content-length") ?? 0);
-  if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
-    throw new RelayHttpError(413, "Encrypted request is too large", "request_too_large");
-  }
-
-  const body = new Uint8Array(await req.arrayBuffer());
-  if (body.byteLength > maxBytes) {
-    throw new RelayHttpError(413, "Encrypted request is too large", "request_too_large");
+  let body: Uint8Array;
+  try {
+    body = await readLimitedBody(req, maxBytes);
+  } catch (error) {
+    if (error instanceof BodyTooLargeError) {
+      throw new RelayHttpError(
+        413,
+        "Encrypted request is too large",
+        "request_too_large",
+      );
+    }
+    throw error;
   }
 
   const rawBody = new TextDecoder().decode(body);
