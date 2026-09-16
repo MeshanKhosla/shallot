@@ -14,9 +14,12 @@ describe("benchmark report", () => {
   test("reports latency deltas and throughput ratios", () => {
     const result: BenchmarkResult = {
       payloadBytes: 4_096,
+      throughputRequests: 100,
       directLatency: metrics(1_000, 1, 2),
+      plainProxyLatency: metrics(500, 2, 3),
       shallotLatency: metrics(250, 5, 8),
       directThroughput: metrics(1_000, 1, 2),
+      plainProxyThroughput: metrics(500, 2, 3),
       shallotThroughput: metrics(250, 5, 8),
     };
 
@@ -27,7 +30,7 @@ describe("benchmark report", () => {
       elapsedSeconds: 1.25,
     });
 
-    expect(report).toContain("| 4096 | 1.00 ms | 5.00 ms | 4.00 ms");
-    expect(report).toContain("| 4096 | 1000 | 250 | 0.25x | 75.0% |");
+    expect(report).toContain("| 4096 | 1.00 ms | 2.00 ms | 5.00 ms | 3.00 ms");
+    expect(report).toContain("| 4096 | 100 | 1000 | 500 | 250 | 0.50x |");
   });
 });

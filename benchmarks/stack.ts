@@ -7,8 +7,10 @@ const PROVIDER_TOKEN = "benchmark-provider-token";
 
 export interface BenchmarkStack {
   directUrl: string;
+  plainProxyUrl: string;
   shallotUrl: string;
   directAuthorization: string;
+  plainProxyAuthorization: string;
   shallotAuthorization: string;
   stop(): Promise<void>;
 }
@@ -21,8 +23,8 @@ interface Service {
 
 function benchmarkPort(offset: number): number {
   const base = Number(process.env.BENCH_BASE_PORT ?? 18_885);
-  if (!Number.isSafeInteger(base) || base < 1024 || base + 3 > 65_535) {
-    throw new Error("BENCH_BASE_PORT must leave four valid non-privileged ports");
+  if (!Number.isSafeInteger(base) || base < 1024 || base + 4 > 65_535) {
+    throw new Error("BENCH_BASE_PORT must leave five valid non-privileged ports");
   }
   return base + offset;
 }
@@ -83,10 +85,12 @@ export async function startBenchmarkStack(): Promise<BenchmarkStack> {
   const exitPort = benchmarkPort(1);
   const relayPort = benchmarkPort(2);
   const sidecarPort = benchmarkPort(3);
+  const plainProxyPort = benchmarkPort(4);
   const providerUrl = `http://127.0.0.1:${providerPort}/v1/chat/completions`;
   const exitUrl = `http://127.0.0.1:${exitPort}/v1/chat/completions`;
   const relayUrl = `http://127.0.0.1:${relayPort}/v1/chat/completions`;
   const sidecarUrl = `http://127.0.0.1:${sidecarPort}/v1/chat/completions`;
+  const plainProxyUrl = `http://127.0.0.1:${plainProxyPort}/v1/chat/completions`;
   const { privateKey, publicKey } = generateKeyPairSync("x25519");
   const privateKeyValue = privateKey
     .export({ format: "der", type: "pkcs8" })
@@ -110,6 +114,21 @@ export async function startBenchmarkStack(): Promise<BenchmarkStack> {
     );
     services.push(provider);
     await waitUntilListening(provider);
+
+    const plainProxy = spawnService(
+      root,
+      "plain proxy",
+      "benchmarks/plain-proxy.ts",
+      plainProxyUrl,
+      {
+        BENCH_PROXY_PORT: String(plainProxyPort),
+        BENCH_PROXY_PROVIDER_URL: providerUrl,
+        BENCH_PROXY_TENANT_TOKEN: TENANT_TOKEN,
+        BENCH_PROXY_PROVIDER_TOKEN: PROVIDER_TOKEN,
+      },
+    );
+    services.push(plainProxy);
+    await waitUntilListening(plainProxy);
 
     const exit = spawnService(root, "Exit", "packages/exit/src/main.ts", exitUrl, {
       EXIT_PORT: String(exitPort),
@@ -154,8 +173,10 @@ export async function startBenchmarkStack(): Promise<BenchmarkStack> {
 
     return {
       directUrl: providerUrl,
+      plainProxyUrl,
       shallotUrl: sidecarUrl,
       directAuthorization: `Bearer ${PROVIDER_TOKEN}`,
+      plainProxyAuthorization: `Bearer ${TENANT_TOKEN}`,
       shallotAuthorization: `Bearer ${TENANT_TOKEN}`,
       async stop() {
         for (const service of services.reverse()) await stopService(service);

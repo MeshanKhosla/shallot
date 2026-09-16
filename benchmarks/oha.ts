@@ -25,7 +25,7 @@ interface OhaOutput {
 export interface OhaRun {
   url: string;
   authorization: string;
-  body: string;
+  bodyPath: string;
   requests: number;
   concurrency: number;
   quiet?: boolean;
@@ -59,8 +59,8 @@ export async function runOha(ohaPath: string, run: OhaRun): Promise<OhaMetrics> 
     `Authorization: ${run.authorization}`,
     "-T",
     "application/json",
-    "-d",
-    run.body,
+    "-D",
+    run.bodyPath,
     run.url,
   ];
   const process = Bun.spawn({
