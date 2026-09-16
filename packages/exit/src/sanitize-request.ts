@@ -22,10 +22,101 @@ const ALLOWED_FIELDS = [
   "reasoning_effort",
 ] as const;
 
+const MESSAGE_FIELDS = [
+  "role",
+  "content",
+  "refusal",
+  "tool_calls",
+  "tool_call_id",
+  "function_call",
+  "audio",
+] as const;
+const TOOL_FIELDS = ["type", "function"] as const;
+const FUNCTION_FIELDS = ["name", "description", "parameters", "strict"] as const;
+const TOOL_CALL_FIELDS = ["id", "type", "function"] as const;
+const FUNCTION_CALL_FIELDS = ["name", "arguments"] as const;
+const RESPONSE_FORMAT_FIELDS = ["type", "json_schema"] as const;
+const JSON_SCHEMA_FIELDS = ["name", "description", "schema", "strict"] as const;
+const STREAM_OPTION_FIELDS = ["include_usage", "include_obfuscation"] as const;
+
 export interface SanitizedChatRequest extends Record<string, unknown> {
   model: string;
   messages: unknown[];
   stream?: boolean;
+}
+
+function copyFields(
+  value: unknown,
+  fields: readonly string[],
+  description: string,
+): Record<string, unknown> {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    throw new ExitHttpError(
+      400,
+      `${description} must be an object`,
+      "invalid_request_error",
+    );
+  }
+  const source = value as Record<string, unknown>;
+  const result: Record<string, unknown> = {};
+  for (const field of fields) {
+    if (source[field] !== undefined) result[field] = source[field];
+  }
+  return result;
+}
+
+function sanitizeMessages(messages: unknown[]): Array<Record<string, unknown>> {
+  return messages.map((message) => {
+    const sanitized = copyFields(message, MESSAGE_FIELDS, "each message");
+    if (typeof sanitized.role !== "string") {
+      throw new ExitHttpError(400, "each message needs a role", "invalid_request_error");
+    }
+    if (sanitized.tool_calls !== undefined) {
+      if (!Array.isArray(sanitized.tool_calls)) {
+        throw new ExitHttpError(
+          400,
+          "tool_calls must be an array",
+          "invalid_request_error",
+        );
+      }
+      sanitized.tool_calls = sanitized.tool_calls.map((toolCall) => {
+        const call = copyFields(toolCall, TOOL_CALL_FIELDS, "each tool call");
+        if (call.function !== undefined) {
+          call.function = copyFields(
+            call.function,
+            FUNCTION_CALL_FIELDS,
+            "tool call function",
+          );
+        }
+        return call;
+      });
+    }
+    if (sanitized.function_call !== undefined) {
+      sanitized.function_call = copyFields(
+        sanitized.function_call,
+        FUNCTION_CALL_FIELDS,
+        "function_call",
+      );
+    }
+    return sanitized;
+  });
+}
+
+function sanitizeTools(value: unknown): Array<Record<string, unknown>> {
+  if (!Array.isArray(value)) {
+    throw new ExitHttpError(400, "tools must be an array", "invalid_request_error");
+  }
+  return value.map((tool) => {
+    const sanitized = copyFields(tool, TOOL_FIELDS, "each tool");
+    if (sanitized.function !== undefined) {
+      sanitized.function = copyFields(
+        sanitized.function,
+        FUNCTION_FIELDS,
+        "tool function",
+      );
+    }
+    return sanitized;
+  });
 }
 
 export function sanitizeChatRequest(
@@ -56,7 +147,35 @@ export function sanitizeChatRequest(
 
   const sanitized: Record<string, unknown> = {};
   for (const field of ALLOWED_FIELDS) {
-    if (source[field] !== undefined) sanitized[field] = source[field];
+    const fieldValue = source[field];
+    if (fieldValue === undefined) continue;
+    if (field === "messages") {
+      sanitized.messages = sanitizeMessages(source.messages);
+    } else if (field === "tools") {
+      sanitized.tools = sanitizeTools(fieldValue);
+    } else if (field === "response_format") {
+      const responseFormat = copyFields(
+        fieldValue,
+        RESPONSE_FORMAT_FIELDS,
+        "response_format",
+      );
+      if (responseFormat.json_schema !== undefined) {
+        responseFormat.json_schema = copyFields(
+          responseFormat.json_schema,
+          JSON_SCHEMA_FIELDS,
+          "response_format.json_schema",
+        );
+      }
+      sanitized.response_format = responseFormat;
+    } else if (field === "stream_options") {
+      sanitized.stream_options = copyFields(
+        fieldValue,
+        STREAM_OPTION_FIELDS,
+        "stream_options",
+      );
+    } else {
+      sanitized[field] = fieldValue;
+    }
   }
   return sanitized as SanitizedChatRequest;
 }

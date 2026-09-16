@@ -65,6 +65,7 @@ export function loadConfig(): RelayConfig {
       positiveInteger("RELAY_REQUEST_TTL_MS", 5 * 60_000),
       Date.now,
       positiveInteger("RELAY_REQUEST_MAX_ENTRIES", 100_000),
+      positiveInteger("RELAY_REQUEST_MAX_ENTRIES_PER_TENANT", 10_000),
     ),
     maxEnvelopeBytes: positiveInteger("RELAY_MAX_ENVELOPE_BYTES", 3 * 1024 * 1024),
     maxConcurrentRequests: positiveInteger("RELAY_MAX_CONCURRENT_REQUESTS", 100),

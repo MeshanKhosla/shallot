@@ -40,4 +40,13 @@ describe("Relay security controls", () => {
       "request tracker is full",
     );
   });
+
+  test("isolates request capacity between tenants", () => {
+    const tracker = new MemoryRequestTracker(100, () => 1_000, 10, 1);
+    expect(tracker.claim("tenant-one", "request-one")).toBeTrue();
+    expect(() => tracker.claim("tenant-one", "request-two")).toThrow(
+      "request tracker is full",
+    );
+    expect(tracker.claim("tenant-two", "request-one")).toBeTrue();
+  });
 });

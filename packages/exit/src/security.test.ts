@@ -17,11 +17,30 @@ describe("Exit security controls", () => {
     const sanitized = sanitizeChatRequest(
       {
         model: "allowed-model",
-        messages: [{ role: "user", content: "hello" }],
+        messages: [
+          {
+            role: "user",
+            content: "hello",
+            name: "tenant-user-id",
+            tenant_marker: "drop-me",
+          },
+        ],
         user: "tenant-user-id",
         metadata: { tenant: "tenant-one" },
         arbitrary: "drop-me",
         temperature: 0,
+        tools: [
+          {
+            type: "function",
+            tenant_marker: "drop-me",
+            function: {
+              name: "weather",
+              description: "Get weather",
+              parameters: { type: "object" },
+              tenant_marker: "drop-me",
+            },
+          },
+        ],
       },
       new Set(["allowed-model"]),
     );
@@ -30,6 +49,16 @@ describe("Exit security controls", () => {
       model: "allowed-model",
       messages: [{ role: "user", content: "hello" }],
       temperature: 0,
+      tools: [
+        {
+          type: "function",
+          function: {
+            name: "weather",
+            description: "Get weather",
+            parameters: { type: "object" },
+          },
+        },
+      ],
     });
   });
 

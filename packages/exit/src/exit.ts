@@ -80,6 +80,19 @@ export function createExitServer(config: ExitConfig = loadConfig()): Server<unde
           );
         }
 
+        let sanitized: ReturnType<typeof sanitizeChatRequest>;
+        try {
+          const plaintext = JSON.parse(opened.payload.toString("utf8"));
+          sanitized = sanitizeChatRequest(plaintext, config.allowedModels);
+        } catch (error) {
+          return await sealProviderResponse(
+            encryptedError(error),
+            opened.responsePublicKey,
+            envelope.requestId,
+            config,
+          );
+        }
+
         const replayKey = `${envelope.keyId}:${envelope.encapsulatedKey}`;
         try {
           if (!config.replayCache.claim(replayKey)) {
@@ -96,14 +109,7 @@ export function createExitServer(config: ExitConfig = loadConfig()): Server<unde
           throw error;
         }
 
-        let providerResponse: Response;
-        try {
-          const plaintext = JSON.parse(opened.payload.toString("utf8"));
-          const sanitized = sanitizeChatRequest(plaintext, config.allowedModels);
-          providerResponse = await callProvider(sanitized, config, req.signal);
-        } catch (error) {
-          providerResponse = encryptedError(error);
-        }
+        const providerResponse = await callProvider(sanitized, config, req.signal);
 
         return await sealProviderResponse(
           providerResponse,

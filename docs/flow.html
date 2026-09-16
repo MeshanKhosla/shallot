@@ -534,7 +534,7 @@
               <article class="node" id="exit-node">
                 <span class="node-number">04</span>
                 <h2>Exit</h2>
-                <p>Decrypts, drops top-level identity fields, calls the provider.</p>
+                <p>Decrypts, drops known identity fields, calls the provider.</p>
               </article>
             </div>
           </section>
@@ -617,7 +617,7 @@
         {
           node: "exit-node",
           title: "The Exit opens and sanitizes",
-          detail: "The tenant credential is already gone. The Exit drops top-level user and metadata fields.",
+          detail: "The tenant credential is already gone. The Exit drops known structured identity fields.",
           can: '"Summarize the Q3 roadmap" · model · tools',
           cannot: "Tenant ID · tenant token · client IP (not sent)",
           packet: "Sanitized prompt",

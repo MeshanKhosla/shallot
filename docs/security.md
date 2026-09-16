@@ -31,7 +31,7 @@ Request and response plaintexts are length-prefixed and padded before encryption
 - The Exit uses a static recipient key. Compromise of its private key permits decryption of recorded request envelopes, so requests do not have forward secrecy against later Exit-key compromise.
 - The response uses an ephemeral client recipient key, but a compromised sidecar already has the plaintext and tenant identity.
 - Padding hides exact payload lengths within a configured bucket. It does not hide timing, frame count, total padded size, model latency, or connection endpoints.
-- Sanitization removes supported top-level identity fields and drops unrecognized top-level request fields. It cannot remove names, account numbers, or other identifiers written inside prompt text or tool arguments.
+- Sanitization removes supported identity fields and drops unrecognized request, message, tool, tool-call, response-format, and stream-option fields. It cannot remove names, account numbers, or other identifiers written inside prompt text, tool descriptions, schemas, or arguments.
 - JavaScript and Bun do not guarantee erasure of secret values from memory.
 - `@hpke/core` is tested against RFC vectors by its maintainers but has not received a formal security audit according to its project documentation. Production use needs dependency review and an independent review of this protocol and deployment.
 
@@ -54,6 +54,6 @@ The bounded in-memory replay and request caches protect one process only. A mult
 
 ## What the tests establish
 
-The automated suite proves that the implemented HTTP path works with the Vercel AI SDK for buffered text, streaming text, tools, structured output, and provider errors. It checks authentication boundaries, top-level sanitizer behavior, bounded replay tracking, padding boundaries, malformed wire values, wrong keys, authenticated-data tampering, response limits, backpressure, cancellation, and plaintext canaries on both sides of the Relay.
+The automated suite proves that the implemented HTTP path works with the Vercel AI SDK for buffered text, streaming text, tools, structured output, and provider errors. It checks authentication boundaries, nested sanitizer behavior, bounded replay tracking, padding boundaries, malformed wire values, wrong keys, authenticated-data tampering, response limits, backpressure, cancellation, and plaintext canaries on both sides of the Relay.
 
 Tests can show that selected identity and plaintext canaries are absent at observed boundaries. They cannot prove organizational non-collusion, eliminate traffic analysis, audit the cryptographic dependency, or validate a future production deployment.
