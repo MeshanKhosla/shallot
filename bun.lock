@@ -12,6 +12,9 @@
     "packages/client": {
       "name": "@shallot/client",
       "version": "0.1.0",
+      "dependencies": {
+        "@shallot/protocol": "workspace:*",
+      },
     },
     "packages/exit": {
       "name": "@shallot/exit",
@@ -20,6 +23,9 @@
     "packages/protocol": {
       "name": "@shallot/protocol",
       "version": "0.1.0",
+      "dependencies": {
+        "@hpke/core": "^1.9.0",
+      },
     },
     "packages/relay": {
       "name": "@shallot/relay",
@@ -27,6 +33,10 @@
     },
   },
   "packages": {
+    "@hpke/common": ["@hpke/common@1.10.1", "", {}, "sha512-moJwhmtLtuxiUzzNp1jpfBfx8yefKoO9D/RCR9dmwrnc7qjJqId1rEtQz+lSlU5cabX8daToMSx/7HayXOiaFw=="],
+
+    "@hpke/core": ["@hpke/core@1.9.0", "", { "dependencies": { "@hpke/common": "^1.10.0" } }, "sha512-pFxWl1nNJeQCSUFs7+GAblHvXBCjn9EPN65vdKlYQil2aURaRxfGMO6vBKGqm1YHTKwiAxJQNEI70PbSowMP9Q=="],
+
     "@shallot/client": ["@shallot/client@workspace:packages/client"],
 
     "@shallot/exit": ["@shallot/exit@workspace:packages/exit"],
