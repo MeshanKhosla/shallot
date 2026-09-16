@@ -39,13 +39,15 @@
       .page {
         width: min(1400px, calc(100% - 32px));
         margin: 0 auto;
-        padding: 28px 0;
+        padding: 32px 0 24px;
       }
 
       .controls {
         display: flex;
-        justify-content: flex-end;
-        margin-bottom: 10px;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        margin-top: 18px;
       }
 
       .control {
@@ -69,10 +71,7 @@
 
       .diagram {
         position: relative;
-        overflow: hidden;
-        border: 1px solid var(--line);
-        border-radius: 10px;
-        background: var(--panel);
+        overflow: clip;
       }
 
       .diagram::after {
@@ -91,7 +90,8 @@
         z-index: 1;
         display: grid;
         grid-template-columns: 1.55fr 0.8fr 0.8fr 0.8fr;
-        min-height: 500px;
+        min-height: 510px;
+        border-block: 1px solid var(--line);
       }
 
       .machine {
@@ -109,23 +109,9 @@
       }
 
       .machine-label {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        color: var(--muted);
-        font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-        font-size: 0.68rem;
-        font-weight: 700;
-        letter-spacing: 0.08em;
-        text-transform: uppercase;
-      }
-
-      .machine-label::before {
-        width: 7px;
-        height: 7px;
-        border-radius: 50%;
-        background: var(--zone-color);
-        content: "";
+        color: var(--ink);
+        font-size: 0.86rem;
+        font-weight: 650;
       }
 
       .nodes {
@@ -169,15 +155,11 @@
         z-index: 4;
         top: 0;
         left: 0;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        min-width: 210px;
-        max-width: 310px;
-        min-height: 48px;
-        padding: 10px 14px;
+        width: 290px;
+        min-height: 104px;
+        overflow: hidden;
         border: 1px solid rgba(23, 33, 60, 0.17);
-        border-radius: 24px;
+        border-radius: 6px;
         color: var(--ink);
         background: #fff;
         box-shadow: 0 8px 22px rgba(23, 33, 60, 0.14);
@@ -195,8 +177,9 @@
       }
 
       .packet.sealed {
-        color: #fff;
-        background: var(--ink);
+        border-color: #57627a;
+        color: var(--ink);
+        background: #f1f3f7;
       }
 
       .packet.response {
@@ -204,12 +187,70 @@
         background: #f2fbf8;
       }
 
-      .packet-label {
-        overflow-wrap: anywhere;
-        font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      .packet-head {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        min-height: 32px;
+        padding: 7px 10px;
+        border-bottom: 1px solid var(--line);
+        color: var(--muted);
         font-size: 0.68rem;
+        font-weight: 700;
+      }
+
+      .packet.sealed .packet-head {
+        color: #fff;
+        background: var(--ink);
+      }
+
+      .lock {
+        display: none;
+        width: 12px;
+        height: 12px;
+      }
+
+      .packet.sealed .lock {
+        display: block;
+      }
+
+      .packet-fields {
+        margin: 0;
+      }
+
+      .packet-row {
+        display: grid;
+        grid-template-columns: 60px 1fr;
+        gap: 8px;
+        padding: 8px 10px;
+      }
+
+      .packet-row + .packet-row {
+        border-top: 1px solid var(--line);
+      }
+
+      .packet-row dt,
+      .packet-row dd {
+        margin: 0;
+        font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+        font-size: 0.66rem;
+        line-height: 1.4;
+      }
+
+      .packet-row dt {
+        color: var(--muted);
+      }
+
+      .packet-row dd {
+        overflow-wrap: anywhere;
         font-weight: 650;
-        line-height: 1.35;
+      }
+
+      .step-count {
+        min-width: 52px;
+        color: var(--muted);
+        font-family: "SFMono-Regular", Consolas, monospace;
+        font-size: 0.72rem;
         text-align: center;
       }
 
@@ -247,7 +288,7 @@
         }
 
         .packet {
-          max-width: min(310px, calc(100% - 24px));
+          width: min(290px, calc(100% - 24px));
         }
       }
 
@@ -261,10 +302,6 @@
   </head>
   <body>
     <main class="page">
-      <div class="controls">
-        <button class="control" id="toggle" type="button">Pause</button>
-      </div>
-
       <section class="diagram" id="diagram" aria-label="Animated Shallot request flow">
         <div class="machines">
           <section class="machine" style="--zone-color: var(--device)">
@@ -299,9 +336,34 @@
         </div>
 
         <div class="packet" id="packet" aria-hidden="true">
-          <span class="packet-label" id="packet-label"></span>
+          <div class="packet-head">
+            <svg class="lock" viewBox="0 0 16 16" aria-hidden="true">
+              <path
+                fill="currentColor"
+                d="M4.5 7V5a3.5 3.5 0 1 1 7 0v2H13v8H3V7h1.5Zm1.25 0h4.5V5a2.25 2.25 0 0 0-4.5 0v2Z"
+              />
+            </svg>
+            <span id="packet-title"></span>
+          </div>
+          <dl class="packet-fields">
+            <div class="packet-row">
+              <dt id="field-one-label"></dt>
+              <dd id="field-one-value"></dd>
+            </div>
+            <div class="packet-row">
+              <dt id="field-two-label"></dt>
+              <dd id="field-two-value"></dd>
+            </div>
+          </dl>
         </div>
       </section>
+
+      <nav class="controls" aria-label="Animation controls">
+        <button class="control" id="previous" type="button">Previous</button>
+        <span class="step-count" id="step-count">1 / 10</span>
+        <button class="control" id="toggle" type="button">Pause</button>
+        <button class="control" id="next" type="button">Next</button>
+      </nav>
 
       <p class="sr-only" id="announcer" aria-live="polite"></p>
     </main>
@@ -310,46 +372,108 @@
       const steps = [
         {
           node: "app-node",
-          packet: 'Alice: "Summarize the Q3 roadmap."',
+          title: "Request",
+          fields: [
+            ["Prompt", '"Summarize the Q3 roadmap."'],
+            ["User", "Alice"],
+          ],
           kind: "plain",
         },
         {
           node: "sidecar-node",
-          packet: "Alice · sealed prompt  9f2a…",
+          title: "Encrypted request",
+          fields: [
+            ["Prompt", "Encrypted for Exit"],
+            ["User", "Alice"],
+          ],
           kind: "sealed",
         },
         {
           node: "relay-node",
-          packet: "Alice · sealed prompt  9f2a…",
+          title: "Encrypted request",
+          fields: [
+            ["Prompt", "Encrypted for Exit"],
+            ["User", "Alice"],
+          ],
           kind: "sealed",
         },
         {
           node: "exit-node",
-          packet: '"Summarize the Q3 roadmap."',
+          title: "Decrypted request",
+          fields: [
+            ["Prompt", '"Summarize the Q3 roadmap."'],
+            ["User", "Not sent"],
+          ],
           kind: "plain",
         },
         {
           node: "provider-node",
-          packet: '"Q3: ship the API, audit logs, and SSO."',
+          title: "Provider request",
+          fields: [
+            ["Prompt", '"Summarize the Q3 roadmap."'],
+            ["User", "Not sent"],
+          ],
+          kind: "plain",
+        },
+        {
+          node: "exit-node",
+          title: "Provider response",
+          fields: [
+            ["Answer", '"Q3: ship the API, audit logs, and SSO."'],
+            ["User", "Not sent"],
+          ],
           kind: "response",
         },
         {
+          node: "exit-node",
+          title: "Encrypted response",
+          fields: [
+            ["Answer", "Encrypted for Sidecar"],
+            ["User", "Not sent"],
+          ],
+          kind: "sealed",
+        },
+        {
           node: "relay-node",
-          packet: "sealed answer frames  71bc… 02ad…",
+          title: "Encrypted response",
+          fields: [
+            ["Answer", "Encrypted for Sidecar"],
+            ["User", "Alice"],
+          ],
           kind: "sealed",
         },
         {
           node: "sidecar-node",
-          packet: '"Q3: ship the API, audit logs, and SSO."',
+          title: "Decrypted response",
+          fields: [
+            ["Answer", '"Q3: ship the API, audit logs, and SSO."'],
+            ["User", "Alice"],
+          ],
+          kind: "response",
+        },
+        {
+          node: "app-node",
+          title: "Response",
+          fields: [
+            ["Answer", '"Q3: ship the API, audit logs, and SSO."'],
+            ["User", "Alice"],
+          ],
           kind: "response",
         },
       ];
 
       const diagram = document.querySelector("#diagram");
       const packet = document.querySelector("#packet");
-      const packetLabel = document.querySelector("#packet-label");
+      const packetTitle = document.querySelector("#packet-title");
+      const fieldOneLabel = document.querySelector("#field-one-label");
+      const fieldOneValue = document.querySelector("#field-one-value");
+      const fieldTwoLabel = document.querySelector("#field-two-label");
+      const fieldTwoValue = document.querySelector("#field-two-value");
       const announcer = document.querySelector("#announcer");
       const toggle = document.querySelector("#toggle");
+      const previous = document.querySelector("#previous");
+      const next = document.querySelector("#next");
+      const stepCount = document.querySelector("#step-count");
       const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 
       let activeStep = 0;
@@ -379,9 +503,16 @@
         });
         node.classList.add("active");
         packet.className = `packet visible ${step.kind}`;
-        packetLabel.textContent = step.packet;
+        packetTitle.textContent = step.title;
+        fieldOneLabel.textContent = step.fields[0][0];
+        fieldOneValue.textContent = step.fields[0][1];
+        fieldTwoLabel.textContent = step.fields[1][0];
+        fieldTwoValue.textContent = step.fields[1][1];
+        stepCount.textContent = `${activeStep + 1} / ${steps.length}`;
         positionPacket(node);
-        if (announce) announcer.textContent = step.packet;
+        if (announce) {
+          announcer.textContent = `${step.title}. ${step.fields[0].join(": ")}. ${step.fields[1].join(": ")}.`;
+        }
       }
 
       function schedule() {
@@ -398,6 +529,16 @@
         toggle.textContent = playing ? "Pause" : "Play";
         schedule();
       });
+
+      function moveManually(offset) {
+        playing = false;
+        toggle.textContent = "Play";
+        clearTimeout(timer);
+        showStep(activeStep + offset);
+      }
+
+      previous.addEventListener("click", () => moveManually(-1));
+      next.addEventListener("click", () => moveManually(1));
 
       reducedMotion.addEventListener("change", (event) => {
         playing = !event.matches;
