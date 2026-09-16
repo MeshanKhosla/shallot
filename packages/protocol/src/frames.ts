@@ -5,9 +5,9 @@ import { padPayload, unpadPayload } from "./padding.ts";
 import {
   frameAad,
   parseSealedFrame,
+  type ResponseFrameKind,
   responseInfo,
   SEALED_FRAME_VERSION,
-  type ResponseFrameKind,
   type SealedFrame,
 } from "./wire.ts";
 

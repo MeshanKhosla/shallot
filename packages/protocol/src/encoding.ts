@@ -1,6 +1,4 @@
-export function encodeBase64Url(
-  value: ArrayBufferLike | ArrayBufferView,
-): string {
+export function encodeBase64Url(value: ArrayBufferLike | ArrayBufferView): string {
   if (ArrayBuffer.isView(value)) {
     return Buffer.from(value.buffer, value.byteOffset, value.byteLength).toString(
       "base64url",
@@ -10,11 +8,7 @@ export function encodeBase64Url(
 }
 
 export function decodeBase64Url(value: string, field: string): Buffer {
-  if (
-    value.length === 0 ||
-    value.length % 4 === 1 ||
-    !/^[A-Za-z0-9_-]+$/.test(value)
-  ) {
+  if (value.length === 0 || value.length % 4 === 1 || !/^[A-Za-z0-9_-]+$/.test(value)) {
     throw new Error(`invalid ${field}`);
   }
   return Buffer.from(value, "base64url");

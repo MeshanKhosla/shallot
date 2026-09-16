@@ -54,8 +54,7 @@ export function parseSealedFrame(value: unknown): SealedFrame {
     value.sequence < 0 ||
     (value.kind !== "head" && value.kind !== "data") ||
     typeof value.final !== "boolean" ||
-    (value.encapsulatedKey !== undefined &&
-      typeof value.encapsulatedKey !== "string") ||
+    (value.encapsulatedKey !== undefined && typeof value.encapsulatedKey !== "string") ||
     typeof value.ciphertext !== "string"
   ) {
     throw new Error("invalid sealed response frame");

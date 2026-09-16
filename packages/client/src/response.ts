@@ -70,10 +70,13 @@ async function* decryptResponseFrames(
 
     const frame = parseFrame(line);
     if (!opener) {
+      if (!frame.encapsulatedKey) {
+        throw new Error("first response frame is missing its encapsulated key");
+      }
       opener = await createResponseOpener(
         responsePrivateKey,
         requestId,
-        frame.encapsulatedKey!,
+        frame.encapsulatedKey,
       );
     }
     const payload = await opener.openFrame(frame, expectedSequence);

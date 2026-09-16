@@ -1,0 +1,19 @@
+{
+  "name": "@shallot/e2e",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@ai-sdk/openai-compatible": "^3.0.49",
+    "@shallot/client": "workspace:*",
+    "@shallot/exit": "workspace:*",
+    "@shallot/mock-provider": "workspace:*",
+    "@shallot/relay": "workspace:*",
+    "ai": "^7.0.102",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {}
+}

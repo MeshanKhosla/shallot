@@ -75,10 +75,7 @@ export async function openRequest(
   const plaintext = await hpke.open(
     {
       recipientKey,
-      enc: decodeBase64Url(
-        envelope.encapsulatedKey,
-        "encapsulated request key",
-      ),
+      enc: decodeBase64Url(envelope.encapsulatedKey, "encapsulated request key"),
       info: REQUEST_INFO,
     },
     decodeBase64Url(envelope.ciphertext, "request ciphertext"),

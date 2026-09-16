@@ -9,11 +9,7 @@ export class SidecarHttpError extends Error {
   }
 }
 
-export function errorResponse(
-  status: number,
-  message: string,
-  type: string,
-): Response {
+export function errorResponse(status: number, message: string, type: string): Response {
   return Response.json({ error: { message, type } }, { status });
 }
 

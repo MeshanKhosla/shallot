@@ -1,5 +1,5 @@
 {
-  "name": "@shallot/relay",
+  "name": "@shallot/mock-provider",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -15,8 +15,6 @@
     "start": "bun src/main.ts",
     "test": "bun test"
   },
-  "dependencies": {
-    "@shallot/protocol": "workspace:*"
-  },
+  "dependencies": {},
   "devDependencies": {}
 }

@@ -27,17 +27,12 @@ describe("sealed protocol", () => {
       exit.responsePublicKey,
       client.envelope.requestId,
     );
-    const frame = await sealer.sealFrame(
-      responseBody,
-      0,
-      "head",
-      true,
-      256,
-    );
+    const frame = await sealer.sealFrame(responseBody, 0, "head", true, 256);
+    if (!frame.encapsulatedKey) throw new Error("missing response encapsulated key");
     const opener = await createResponseOpener(
       client.responsePrivateKey,
       client.envelope.requestId,
-      frame.encapsulatedKey!,
+      frame.encapsulatedKey,
     );
 
     expect(await opener.openFrame(frame, 0)).toEqual(responseBody);
@@ -55,17 +50,12 @@ describe("sealed protocol", () => {
       exit.responsePublicKey,
       client.envelope.requestId,
     );
-    const frame = await sealer.sealFrame(
-      Buffer.from("response"),
-      0,
-      "head",
-      true,
-      256,
-    );
+    const frame = await sealer.sealFrame(Buffer.from("response"), 0, "head", true, 256);
+    if (!frame.encapsulatedKey) throw new Error("missing response encapsulated key");
     const opener = await createResponseOpener(
       client.responsePrivateKey,
       client.envelope.requestId,
-      frame.encapsulatedKey!,
+      frame.encapsulatedKey,
     );
 
     await expect(opener.openFrame({ ...frame, final: false }, 0)).rejects.toThrow();

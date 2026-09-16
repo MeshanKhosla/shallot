@@ -40,11 +40,7 @@ function parseJsonObject(body: Uint8Array): ChatRequest {
 
   const request = value as ChatRequest;
   if (request.stream !== undefined && typeof request.stream !== "boolean") {
-    throw new SidecarHttpError(
-      400,
-      "stream must be a boolean",
-      "invalid_request_error",
-    );
+    throw new SidecarHttpError(400, "stream must be a boolean", "invalid_request_error");
   }
   return request;
 }
@@ -55,20 +51,12 @@ export async function readChatRequest(
 ): Promise<ParsedChatRequest> {
   const contentLength = parseContentLength(req);
   if (contentLength !== undefined && contentLength > maxRequestBytes) {
-    throw new SidecarHttpError(
-      413,
-      "request body is too large",
-      "request_too_large",
-    );
+    throw new SidecarHttpError(413, "request body is too large", "request_too_large");
   }
 
   const body = new Uint8Array(await req.arrayBuffer());
   if (body.byteLength > maxRequestBytes) {
-    throw new SidecarHttpError(
-      413,
-      "request body is too large",
-      "request_too_large",
-    );
+    throw new SidecarHttpError(413, "request body is too large", "request_too_large");
   }
 
   return { body, value: parseJsonObject(body) };

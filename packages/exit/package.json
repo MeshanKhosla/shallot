@@ -10,6 +10,13 @@
   "files": [
     "src"
   ],
-  "dependencies": {},
+  "scripts": {
+    "dev": "bun --watch src/main.ts",
+    "start": "bun src/main.ts",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@shallot/protocol": "workspace:*"
+  },
   "devDependencies": {}
 }

@@ -37,9 +37,10 @@ function setup(responsePayloads: string[]) {
       const head = await sealer.sealFrame(
         encodeResponseHead({
           status: 200,
-          contentType: responsePayloads.length > 1
-            ? "text/event-stream; charset=utf-8"
-            : "application/json",
+          contentType:
+            responsePayloads.length > 1
+              ? "text/event-stream; charset=utf-8"
+              : "application/json",
         }),
         0,
         "head",
