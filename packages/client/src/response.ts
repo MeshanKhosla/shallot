@@ -23,11 +23,17 @@ function parseFrame(line: string): SealedFrame {
 async function* readNdjsonLines(
   body: ReadableStream<Uint8Array>,
   maxLineBytes: number,
+  signal: AbortSignal,
 ): AsyncGenerator<string> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
   let pending = "";
   let reachedEnd = false;
+  const cancelReader = () => {
+    void reader.cancel(signal.reason).catch(() => undefined);
+  };
+  if (signal.aborted) cancelReader();
+  else signal.addEventListener("abort", cancelReader, { once: true });
 
   try {
     while (true) {
@@ -57,6 +63,7 @@ async function* readNdjsonLines(
     const finalLine = pending.trim();
     if (finalLine) yield finalLine;
   } finally {
+    signal.removeEventListener("abort", cancelReader);
     if (!reachedEnd) {
       await reader.cancel("response consumer stopped").catch(() => undefined);
     }
@@ -74,6 +81,7 @@ async function* decryptResponseFrames(
   responsePrivateKey: CryptoKey,
   requestId: string,
   config: SidecarConfig,
+  signal: AbortSignal,
 ): AsyncGenerator<DecryptedFrame> {
   let expectedSequence = 0;
   let sawFinal = false;
@@ -81,7 +89,7 @@ async function* decryptResponseFrames(
 
   let totalBytes = 0;
 
-  for await (const line of readNdjsonLines(body, config.maxResponseLineBytes)) {
+  for await (const line of readNdjsonLines(body, config.maxResponseLineBytes, signal)) {
     if (sawFinal) {
       throw new Error("Relay sent data after the final response frame");
     }
@@ -118,6 +126,7 @@ async function* decryptResponseFrames(
 interface OpenedResponse {
   head: ResponseHead;
   data: AsyncGenerator<Buffer>;
+  cancel(): Promise<void>;
 }
 
 async function openEncryptedResponse(
@@ -126,7 +135,14 @@ async function openEncryptedResponse(
   requestId: string,
   config: SidecarConfig,
 ): Promise<OpenedResponse> {
-  const frames = decryptResponseFrames(body, responsePrivateKey, requestId, config);
+  const cancellation = new AbortController();
+  const frames = decryptResponseFrames(
+    body,
+    responsePrivateKey,
+    requestId,
+    config,
+    cancellation.signal,
+  );
   const first = await frames.next();
   if (first.done || first.value.kind !== "head") {
     throw new Error("encrypted response is missing its head frame");
@@ -141,7 +157,14 @@ async function openEncryptedResponse(
     }
   }
 
-  return { head: decodeResponseHead(first.value.payload), data: data() };
+  return {
+    head: decodeResponseHead(first.value.payload),
+    data: data(),
+    async cancel() {
+      cancellation.abort("response consumer stopped");
+      await frames.return(undefined);
+    },
+  };
 }
 
 export async function createStreamingResponse(
@@ -175,7 +198,7 @@ export async function createStreamingResponse(
       }
     },
     async cancel() {
-      await opened.data.return(undefined);
+      await opened.cancel();
     },
   });
 

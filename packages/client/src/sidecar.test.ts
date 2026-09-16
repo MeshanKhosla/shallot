@@ -5,8 +5,10 @@ import {
   encodeResponseHead,
   openRequest,
   parseSealedRequest,
+  sealRequest,
 } from "@shallot/protocol";
 import type { SidecarConfig } from "./config.ts";
+import { createStreamingResponse } from "./response.ts";
 import { createSidecarServer } from "./sidecar.ts";
 
 const servers: Array<{ stop(closeActiveConnections?: boolean): void }> = [];
@@ -227,5 +229,59 @@ describe("sidecar", () => {
     const response = await postChat(harness.url);
 
     expect(response.status).toBe(502);
+  });
+
+  test("cancels the encrypted upstream when a streaming client stops", async () => {
+    const exitKeys = generateKeyPairSync("x25519");
+    const sealed = await sealRequest(Buffer.from("{}"), {
+      exitPublicKey: exitKeys.publicKey,
+      keyId: "local",
+      paddingBytes: 64,
+    });
+    const opened = await openRequest(sealed.envelope, exitKeys.privateKey);
+    const sealer = await createResponseSealer(
+      opened.responsePublicKey,
+      sealed.envelope.requestId,
+    );
+    const head = await sealer.sealFrame(
+      encodeResponseHead({
+        status: 200,
+        contentType: "text/event-stream; charset=utf-8",
+      }),
+      0,
+      "head",
+      false,
+      256,
+    );
+    let cancelled = false;
+    const relayBody = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(Buffer.from(`${JSON.stringify(head)}\n`));
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    const response = await createStreamingResponse(
+      relayBody,
+      sealed.responsePrivateKey,
+      sealed.envelope.requestId,
+      {
+        hostname: "127.0.0.1",
+        port: 0,
+        relayUrl: new URL("http://127.0.0.1"),
+        exitPublicKey: exitKeys.publicKey,
+        exitKeyId: "local",
+        requestPaddingBytes: 64,
+        maxRequestBytes: 1024,
+        maxResponseLineBytes: 1024,
+        maxResponseFrames: 10,
+        maxResponseBytes: 1024,
+      },
+    );
+
+    await response.body?.cancel("test cancellation");
+
+    expect(cancelled).toBeTrue();
   });
 });
