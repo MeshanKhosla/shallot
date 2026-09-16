@@ -77,4 +77,4 @@ The privacy property requires the Relay and Exit not to collude. The Relay learn
 
 Shallot uses RFC 9180 HPKE with X25519/HKDF-SHA-256, HKDF-SHA-256, and AES-256-GCM. The static Exit recipient key does not provide forward secrecy if that private key is later compromised. This POC is not a substitute for an independent security review.
 
-See [the security model](docs/security.md) for precise guarantees and limitations, and [the implementation plan](docs/implementation-plan.md) for design detail.
+Open the [animated request flow](docs/flow.html) for a visual walkthrough. See [the security model](docs/security.md) for precise guarantees and limitations, and [the implementation plan](docs/implementation-plan.md) for design detail.
