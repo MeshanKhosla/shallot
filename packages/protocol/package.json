@@ -14,7 +14,7 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@hpke/core": "^1.9.0"
+    "@hpke/core": "1.9.0"
   },
   "devDependencies": {}
 }

@@ -1,9 +1,11 @@
-import { isRecord } from "./encoding.ts";
+import { isBase64Url, isBase64UrlBytes, isRecord } from "./encoding.ts";
 
 export const SEALED_REQUEST_VERSION = "shallot.hpke-request.v1" as const;
 export const SEALED_FRAME_VERSION = "shallot.hpke-frame.v1" as const;
 
 const RESPONSE_INFO_PREFIX = "shallot/response/v1\n";
+const X25519_KEY_BYTES = 32;
+const MAX_ID_LENGTH = 128;
 
 export type ResponseFrameKind = "head" | "data";
 
@@ -32,11 +34,13 @@ export function parseSealedRequest(value: unknown): SealedRequest {
     value.version !== SEALED_REQUEST_VERSION ||
     typeof value.requestId !== "string" ||
     value.requestId.length === 0 ||
+    value.requestId.length > MAX_ID_LENGTH ||
     typeof value.keyId !== "string" ||
     value.keyId.length === 0 ||
-    typeof value.encapsulatedKey !== "string" ||
-    typeof value.responsePublicKey !== "string" ||
-    typeof value.ciphertext !== "string"
+    value.keyId.length > MAX_ID_LENGTH ||
+    !isBase64UrlBytes(value.encapsulatedKey, X25519_KEY_BYTES) ||
+    !isBase64UrlBytes(value.responsePublicKey, X25519_KEY_BYTES) ||
+    !isBase64Url(value.ciphertext)
   ) {
     throw new Error("invalid sealed request");
   }
@@ -49,13 +53,15 @@ export function parseSealedFrame(value: unknown): SealedFrame {
     value.version !== SEALED_FRAME_VERSION ||
     typeof value.requestId !== "string" ||
     value.requestId.length === 0 ||
+    value.requestId.length > MAX_ID_LENGTH ||
     typeof value.sequence !== "number" ||
     !Number.isSafeInteger(value.sequence) ||
     value.sequence < 0 ||
     (value.kind !== "head" && value.kind !== "data") ||
     typeof value.final !== "boolean" ||
-    (value.encapsulatedKey !== undefined && typeof value.encapsulatedKey !== "string") ||
-    typeof value.ciphertext !== "string"
+    (value.encapsulatedKey !== undefined &&
+      !isBase64UrlBytes(value.encapsulatedKey, X25519_KEY_BYTES)) ||
+    !isBase64Url(value.ciphertext)
   ) {
     throw new Error("invalid sealed response frame");
   }
