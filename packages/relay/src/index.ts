@@ -3,6 +3,7 @@ export { createRelayServer } from "./relay.ts";
 export {
   MemoryRequestTracker,
   type RequestTracker,
+  RequestTrackerCapacityError,
 } from "./request-tracker.ts";
 export {
   StaticTenantAuthenticator,

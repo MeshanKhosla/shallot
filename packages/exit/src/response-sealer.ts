@@ -44,6 +44,7 @@ async function* coalesceResponseBody(
   maxFramePayloadBytes: number,
   flushMs: number,
   maxResponseBytes: number,
+  signal: AbortSignal,
 ): AsyncGenerator<Buffer> {
   if (!body) return;
 
@@ -52,6 +53,11 @@ async function* coalesceResponseBody(
   let totalBytes = 0;
   let pendingRead = reader.read();
   let reachedEnd = false;
+  const cancelReader = () => {
+    void reader.cancel(signal.reason).catch(() => undefined);
+  };
+  if (signal.aborted) cancelReader();
+  else signal.addEventListener("abort", cancelReader, { once: true });
 
   try {
     while (true) {
@@ -86,6 +92,7 @@ async function* coalesceResponseBody(
       yield queue.take(maxFramePayloadBytes);
     }
   } finally {
+    signal.removeEventListener("abort", cancelReader);
     if (!reachedEnd) {
       await reader.cancel("encrypted response consumer stopped").catch(() => undefined);
     }
@@ -117,15 +124,16 @@ export async function sealProviderResponse(
     throw new Error("response padding must leave room for a length prefix");
   }
 
+  const cancellation = new AbortController();
   const chunks = coalesceResponseBody(
     providerResponse.body,
     maxPayloadBytes,
     config.responseFlushMs,
     config.maxProviderResponseBytes,
+    cancellation.signal,
   );
   let sentHead = false;
   let sequence = 1;
-  let currentChunk: IteratorResult<Buffer> | undefined;
   let finished = false;
 
   const stream = new ReadableStream<Uint8Array>({
@@ -147,21 +155,19 @@ export async function sealProviderResponse(
           return;
         }
 
-        currentChunk ??= await chunks.next();
-        const nextChunk = currentChunk.done ? currentChunk : await chunks.next();
-        const payload = currentChunk.done ? new Uint8Array() : currentChunk.value;
+        const chunk = await chunks.next();
+        const payload = chunk.done ? new Uint8Array() : chunk.value;
         const frame = await sealer.sealFrame(
           payload,
           sequence,
           "data",
-          nextChunk.done === true,
+          chunk.done === true,
           config.responsePaddingBytes,
         );
         controller.enqueue(serializeFrame(frame));
         sequence += 1;
-        currentChunk = nextChunk;
 
-        if (nextChunk.done === true) {
+        if (chunk.done === true) {
           finished = true;
           controller.close();
         }
@@ -171,6 +177,7 @@ export async function sealProviderResponse(
     },
     async cancel(reason) {
       if (finished) return;
+      cancellation.abort(reason);
       await chunks.return(undefined);
       if (providerResponse.body && !providerResponse.body.locked) {
         await providerResponse.body.cancel(reason).catch(() => undefined);

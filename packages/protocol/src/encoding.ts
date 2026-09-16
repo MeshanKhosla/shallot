@@ -15,12 +15,15 @@ export function decodeBase64Url(value: string, field: string): Buffer {
 }
 
 export function isBase64Url(value: unknown): value is string {
-  return (
-    typeof value === "string" &&
-    value.length > 0 &&
-    value.length % 4 !== 1 &&
-    /^[A-Za-z0-9_-]+$/.test(value)
-  );
+  if (
+    typeof value !== "string" ||
+    value.length === 0 ||
+    value.length % 4 === 1 ||
+    !/^[A-Za-z0-9_-]+$/.test(value)
+  ) {
+    return false;
+  }
+  return Buffer.from(value, "base64url").toString("base64url") === value;
 }
 
 export function isBase64UrlBytes(value: unknown, byteLength: number): value is string {

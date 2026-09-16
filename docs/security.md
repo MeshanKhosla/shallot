@@ -50,10 +50,10 @@ The implementation also enforces:
 - Backpressure and cancellation through the encrypted response path
 - No forwarding of client headers, cookies, client IP headers, or trace context to the Exit
 
-The in-memory replay and request caches protect one process only. A multi-instance deployment needs shared, atomic stores. Static environment credentials are suitable for this local POC; production should use workload identity or mutual TLS and a managed key system.
+The bounded in-memory replay and request caches protect one process only. A multi-instance deployment needs shared, atomic stores. Static environment credentials are suitable for this local POC; production should use workload identity or mutual TLS and a managed key system.
 
 ## What the tests establish
 
-The automated suite proves that the implemented HTTP path works with the Vercel AI SDK for buffered text, streaming text, tools, structured output, and provider errors. It checks authentication boundaries, sanitizer behavior, replay rejection, padding boundaries, malformed wire values, wrong keys, authenticated-data tampering, frame order, size limits, backpressure, and cancellation.
+The automated suite proves that the implemented HTTP path works with the Vercel AI SDK for buffered text, streaming text, tools, structured output, and provider errors. It checks authentication boundaries, top-level sanitizer behavior, bounded replay tracking, padding boundaries, malformed wire values, wrong keys, authenticated-data tampering, response limits, backpressure, cancellation, and plaintext canaries on both sides of the Relay.
 
 Tests can show that selected identity and plaintext canaries are absent at observed boundaries. They cannot prove organizational non-collusion, eliminate traffic analysis, audit the cryptographic dependency, or validate a future production deployment.

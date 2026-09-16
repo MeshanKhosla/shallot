@@ -43,4 +43,41 @@ describe("encrypted response backpressure", () => {
 
     expect(cancelled).toBeTrue();
   });
+
+  test("flushes one provider chunk without waiting for another", async () => {
+    let cancelled = false;
+    const providerBody = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(Buffer.from("one chunk"));
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    const response = await sealProviderResponse(
+      new Response(providerBody),
+      await responsePublicKey(),
+      "00000000-0000-4000-8000-000000000001",
+      {
+        responsePaddingBytes: 64,
+        responseFlushMs: 5,
+        maxProviderResponseBytes: 1024,
+      },
+    );
+    const reader = response.body?.getReader();
+    expect(reader).toBeDefined();
+    await reader?.read();
+
+    const dataFrame = await Promise.race([
+      reader?.read(),
+      Bun.sleep(100).then(() => "timed out" as const),
+    ]);
+    expect(dataFrame).not.toBe("timed out");
+
+    const pendingRead = reader?.read();
+    await Bun.sleep(5);
+    await reader?.cancel("test active cancellation");
+    await pendingRead;
+    expect(cancelled).toBeTrue();
+  });
 });

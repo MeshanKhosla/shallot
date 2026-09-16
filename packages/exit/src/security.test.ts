@@ -51,4 +51,10 @@ describe("Exit security controls", () => {
     now += 101;
     expect(cache.claim("envelope-one")).toBeTrue();
   });
+
+  test("bounds replay entries", () => {
+    const cache = new MemoryReplayCache(100, () => 1_000, 1);
+    expect(cache.claim("envelope-one")).toBeTrue();
+    expect(() => cache.claim("envelope-two")).toThrow("replay cache is full");
+  });
 });

@@ -33,6 +33,7 @@ afterEach(() => {
 
 function setupGateway() {
   const relayObservations: RelayObservation[] = [];
+  const relayResponseChunks: Uint8Array[] = [];
   const providerObservations: ProviderObservation[] = [];
   const exitKeys = generateKeyPairSync("x25519");
 
@@ -78,8 +79,10 @@ function setupGateway() {
     requestTracker: new MemoryRequestTracker(60_000),
     maxEnvelopeBytes: 256 * 1024,
     maxConcurrentRequests: 10,
+    exitTimeoutMs: 1_000,
     fetch,
     observe: (observation) => relayObservations.push(observation),
+    observeResponseChunk: (chunk) => relayResponseChunks.push(chunk.slice()),
   });
   servers.push(relay);
 
@@ -91,6 +94,7 @@ function setupGateway() {
     exitKeyId: "test-key",
     requestPaddingBytes: 1024,
     maxRequestBytes: 64 * 1024,
+    relayTimeoutMs: 1_000,
     maxResponseLineBytes: 64 * 1024,
     maxResponseFrames: 100,
     maxResponseBytes: 256 * 1024,
@@ -111,6 +115,7 @@ function setupGateway() {
     relayUrl: `http://127.0.0.1:${relay.port}/v1/chat/completions`,
     exitUrl: `http://127.0.0.1:${exit.port}/v1/chat/completions`,
     relayObservations,
+    relayResponseText: () => Buffer.concat(relayResponseChunks).toString("utf8"),
     providerObservations,
   };
 }
@@ -137,6 +142,7 @@ describe("AI SDK through Shallot", () => {
     expect(relay.body).not.toContain(prompt);
     expect(relay.body).not.toContain(TENANT_TOKEN);
     expect(relay.body).not.toContain("deterministic-response");
+    expect(gateway.relayResponseText()).not.toContain("deterministic-response");
     expect(relay.forwardedHeaders.get("authorization")).toBe(`Bearer ${EXIT_TOKEN}`);
 
     const provider = itemAt(gateway.providerObservations, 0);
@@ -158,7 +164,7 @@ describe("AI SDK through Shallot", () => {
 
     expect(text).toBe("deterministic-response");
     expect(gateway.relayObservations).toHaveLength(1);
-    expect(itemAt(gateway.relayObservations, 0).body).not.toContain(text);
+    expect(gateway.relayResponseText()).not.toContain(text);
   });
 
   test("supports an AI SDK tool round trip", async () => {
@@ -209,6 +215,7 @@ describe("AI SDK through Shallot", () => {
     expect(itemAt(gateway.relayObservations, 0).body).not.toContain(
       "configured provider error",
     );
+    expect(gateway.relayResponseText()).not.toContain("configured provider error");
   });
 
   test("rejects an invalid tenant token before the Exit", async () => {

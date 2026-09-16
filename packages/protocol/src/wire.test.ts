@@ -7,6 +7,7 @@ import {
 } from "./wire.ts";
 
 const x25519Key = Buffer.alloc(32, 1).toString("base64url");
+const ciphertext = Buffer.from([1, 2]).toString("base64url");
 
 const request = {
   version: SEALED_REQUEST_VERSION,
@@ -14,7 +15,7 @@ const request = {
   keyId: "key-1",
   encapsulatedKey: x25519Key,
   responsePublicKey: x25519Key,
-  ciphertext: "ghi",
+  ciphertext,
 };
 
 describe("wire validation", () => {
@@ -43,6 +44,26 @@ describe("wire validation", () => {
     );
   });
 
+  test("rejects delimiters in request identifiers", () => {
+    expect(() => parseSealedRequest({ ...request, keyId: "current\nprevious" })).toThrow(
+      "invalid sealed request",
+    );
+  });
+
+  test("rejects non-canonical base64url", () => {
+    const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+    const canonical = Buffer.alloc(32, 1).toString("base64url");
+    const lastIndex = alphabet.indexOf(canonical.at(-1) ?? "");
+    const alternate = canonical.slice(0, -1) + alphabet[lastIndex + 1];
+
+    expect(Buffer.from(alternate, "base64url")).toEqual(
+      Buffer.from(canonical, "base64url"),
+    );
+    expect(() => parseSealedRequest({ ...request, encapsulatedKey: alternate })).toThrow(
+      "invalid sealed request",
+    );
+  });
+
   test("requires the head at sequence zero", () => {
     expect(() =>
       parseSealedFrame({
@@ -52,7 +73,7 @@ describe("wire validation", () => {
         kind: "data",
         final: false,
         encapsulatedKey: x25519Key,
-        ciphertext: "def",
+        ciphertext,
       }),
     ).toThrow("first response frame must be a head frame");
   });
@@ -66,7 +87,7 @@ describe("wire validation", () => {
         kind: "data",
         final: true,
         encapsulatedKey: x25519Key,
-        ciphertext: "def",
+        ciphertext,
       }),
     ).toThrow("only the first response frame may contain an encapsulated key");
   });

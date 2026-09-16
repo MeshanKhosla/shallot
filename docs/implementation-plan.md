@@ -1,5 +1,7 @@
 # Shallot implementation plan
 
+> This records the proposed scope and design. It is not a completion checklist. The README and security model describe the implemented POC and its current tests.
+
 ## Goal
 
 Build a working proof of concept for an AI gateway with a split trust model:

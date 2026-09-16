@@ -8,7 +8,7 @@ import {
   sealRequest,
 } from "@shallot/protocol";
 import type { SidecarConfig } from "./config.ts";
-import { createStreamingResponse } from "./response.ts";
+import { createBufferedResponse, createStreamingResponse } from "./response.ts";
 import { createSidecarServer } from "./sidecar.ts";
 
 const servers: Array<{ stop(closeActiveConnections?: boolean): void }> = [];
@@ -81,6 +81,7 @@ function setup(responsePayloads: string[], limits: Partial<ResponseLimits> = {})
     exitKeyId: "local",
     requestPaddingBytes: 1024,
     maxRequestBytes: 64 * 1024,
+    relayTimeoutMs: 1_000,
     maxResponseLineBytes: 64 * 1024,
     maxResponseFrames: 100,
     maxResponseBytes: 64 * 1024,
@@ -118,6 +119,7 @@ function setupMalformedRelay(body: string, maxResponseLineBytes = 64 * 1024) {
     exitKeyId: "local",
     requestPaddingBytes: 1024,
     maxRequestBytes: 64 * 1024,
+    relayTimeoutMs: 1_000,
     maxResponseLineBytes,
     maxResponseFrames: 100,
     maxResponseBytes: 64 * 1024,
@@ -206,6 +208,17 @@ describe("sidecar", () => {
     });
   });
 
+  test("rejects non-JSON request content", async () => {
+    const harness = setup(["{}"]);
+    const response = await fetch(harness.url, {
+      method: "POST",
+      headers: { "content-type": "text/plain" },
+      body: "{}",
+    });
+
+    expect(response.status).toBe(415);
+  });
+
   test("rejects malformed encrypted response framing", async () => {
     const response = await postChat(setupMalformedRelay("not-json\n"));
 
@@ -274,6 +287,7 @@ describe("sidecar", () => {
         exitKeyId: "local",
         requestPaddingBytes: 64,
         maxRequestBytes: 1024,
+        relayTimeoutMs: 1_000,
         maxResponseLineBytes: 1024,
         maxResponseFrames: 10,
         maxResponseBytes: 1024,
@@ -282,6 +296,59 @@ describe("sidecar", () => {
 
     await response.body?.cancel("test cancellation");
 
+    expect(cancelled).toBeTrue();
+  });
+
+  test("cancels the encrypted upstream after an invalid response head", async () => {
+    const exitKeys = generateKeyPairSync("x25519");
+    const sealed = await sealRequest(Buffer.from("{}"), {
+      exitPublicKey: exitKeys.publicKey,
+      keyId: "local",
+      paddingBytes: 64,
+    });
+    const opened = await openRequest(sealed.envelope, exitKeys.privateKey);
+    const sealer = await createResponseSealer(
+      opened.responsePublicKey,
+      sealed.envelope.requestId,
+    );
+    const invalidHead = await sealer.sealFrame(
+      Buffer.from("not a response head"),
+      0,
+      "head",
+      false,
+      256,
+    );
+    let cancelled = false;
+    const relayBody = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(Buffer.from(`${JSON.stringify(invalidHead)}\n`));
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    const config: SidecarConfig = {
+      hostname: "127.0.0.1",
+      port: 0,
+      relayUrl: new URL("http://127.0.0.1"),
+      exitPublicKey: exitKeys.publicKey,
+      exitKeyId: "local",
+      requestPaddingBytes: 64,
+      maxRequestBytes: 1024,
+      relayTimeoutMs: 1_000,
+      maxResponseLineBytes: 1024,
+      maxResponseFrames: 10,
+      maxResponseBytes: 1024,
+    };
+
+    await expect(
+      createBufferedResponse(
+        relayBody,
+        sealed.responsePrivateKey,
+        sealed.envelope.requestId,
+        config,
+      ),
+    ).rejects.toThrow("invalid encrypted response");
     expect(cancelled).toBeTrue();
   });
 });

@@ -17,8 +17,10 @@ export interface RelayConfig {
   requestTracker: RequestTracker;
   maxEnvelopeBytes: number;
   maxConcurrentRequests: number;
+  exitTimeoutMs: number;
   fetch: typeof fetch;
   observe?: (observation: RelayObservation) => void;
+  observeResponseChunk?: (chunk: Uint8Array) => void;
 }
 
 function positiveInteger(name: string, fallback: number): number {
@@ -61,9 +63,12 @@ export function loadConfig(): RelayConfig {
     authenticator: new StaticTenantAuthenticator(tenantTokensFromEnvironment()),
     requestTracker: new MemoryRequestTracker(
       positiveInteger("RELAY_REQUEST_TTL_MS", 5 * 60_000),
+      Date.now,
+      positiveInteger("RELAY_REQUEST_MAX_ENTRIES", 100_000),
     ),
     maxEnvelopeBytes: positiveInteger("RELAY_MAX_ENVELOPE_BYTES", 3 * 1024 * 1024),
     maxConcurrentRequests: positiveInteger("RELAY_MAX_CONCURRENT_REQUESTS", 100),
+    exitTimeoutMs: positiveInteger("RELAY_EXIT_TIMEOUT_MS", 65_000),
     fetch,
   };
 }

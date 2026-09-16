@@ -57,7 +57,11 @@ export function loadConfig(): ExitConfig {
       16 * 1024 * 1024,
     ),
     providerTimeoutMs: positiveInteger("EXIT_PROVIDER_TIMEOUT_MS", 60_000),
-    replayCache: new MemoryReplayCache(positiveInteger("EXIT_REPLAY_TTL_MS", 5 * 60_000)),
+    replayCache: new MemoryReplayCache(
+      positiveInteger("EXIT_REPLAY_TTL_MS", 5 * 60_000),
+      Date.now,
+      positiveInteger("EXIT_REPLAY_MAX_ENTRIES", 100_000),
+    ),
     fetch,
   };
 }

@@ -6,9 +6,9 @@ export interface SidecarConfig {
   relayUrl: URL;
   exitPublicKey: ReturnType<typeof parseX25519PublicKey>;
   exitKeyId: string;
-  relayAuthorization?: string;
   requestPaddingBytes: number;
   maxRequestBytes: number;
+  relayTimeoutMs: number;
   maxResponseLineBytes: number;
   maxResponseFrames: number;
   maxResponseBytes: number;
@@ -39,9 +39,9 @@ export function loadConfig(): SidecarConfig {
     relayUrl,
     exitPublicKey: parseX25519PublicKey(publicKey),
     exitKeyId: process.env.SIDECAR_EXIT_KEY_ID ?? "local",
-    relayAuthorization: process.env.SIDECAR_RELAY_AUTHORIZATION,
     requestPaddingBytes: positiveInteger("SIDECAR_REQUEST_PADDING_BYTES", 4096),
     maxRequestBytes: positiveInteger("SIDECAR_MAX_REQUEST_BYTES", 2 * 1024 * 1024),
+    relayTimeoutMs: positiveInteger("SIDECAR_RELAY_TIMEOUT_MS", 65_000),
     maxResponseLineBytes: positiveInteger("SIDECAR_MAX_RESPONSE_LINE_BYTES", 64 * 1024),
     maxResponseFrames: positiveInteger("SIDECAR_MAX_RESPONSE_FRAMES", 10_000),
     maxResponseBytes: positiveInteger("SIDECAR_MAX_RESPONSE_BYTES", 16 * 1024 * 1024),

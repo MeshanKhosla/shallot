@@ -11,6 +11,7 @@ import type { Server } from "bun";
 import { type ExitConfig, loadConfig } from "./config.ts";
 import { ExitHttpError, exitErrorResponse } from "./errors.ts";
 import { callProvider } from "./provider-client.ts";
+import { ReplayCacheCapacityError } from "./replay-cache.ts";
 import { sealProviderResponse } from "./response-sealer.ts";
 import { sanitizeChatRequest } from "./sanitize-request.ts";
 import { requireRelayAuthorization } from "./service-auth.ts";
@@ -68,11 +69,6 @@ export function createExitServer(config: ExitConfig = loadConfig()): Server<unde
           throw new ExitHttpError(400, "Unknown Exit key", "invalid_request_error");
         }
 
-        const replayKey = `${envelope.keyId}:${envelope.encapsulatedKey}`;
-        if (!config.replayCache.claim(replayKey)) {
-          throw new ExitHttpError(409, "Encrypted request was replayed", "replay_error");
-        }
-
         let opened: OpenedRequestContext;
         try {
           opened = await openRequest(envelope, privateKey);
@@ -82,6 +78,22 @@ export function createExitServer(config: ExitConfig = loadConfig()): Server<unde
             "Invalid encrypted request",
             "invalid_request_error",
           );
+        }
+
+        const replayKey = `${envelope.keyId}:${envelope.encapsulatedKey}`;
+        try {
+          if (!config.replayCache.claim(replayKey)) {
+            throw new ExitHttpError(
+              409,
+              "Encrypted request was replayed",
+              "replay_error",
+            );
+          }
+        } catch (error) {
+          if (error instanceof ReplayCacheCapacityError) {
+            throw new ExitHttpError(503, "Exit replay cache is full", "overloaded_error");
+          }
+          throw error;
         }
 
         let providerResponse: Response;

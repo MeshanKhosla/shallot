@@ -42,6 +42,15 @@ export async function readChatRequest(
   req: Request,
   maxRequestBytes: number,
 ): Promise<ParsedChatRequest> {
+  const mediaType = req.headers.get("content-type")?.split(";", 1).at(0)?.trim();
+  if (mediaType !== "application/json") {
+    throw new SidecarHttpError(
+      415,
+      "content-type must be application/json",
+      "invalid_request_error",
+    );
+  }
+
   let body: Uint8Array;
   try {
     body = await readLimitedBody(req, maxRequestBytes);

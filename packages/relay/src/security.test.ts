@@ -32,4 +32,12 @@ describe("Relay security controls", () => {
     now += 101;
     expect(tracker.claim("tenant-one", "request-one")).toBeTrue();
   });
+
+  test("bounds tracked request IDs", () => {
+    const tracker = new MemoryRequestTracker(100, () => 1_000, 1);
+    expect(tracker.claim("tenant-one", "request-one")).toBeTrue();
+    expect(() => tracker.claim("tenant-one", "request-two")).toThrow(
+      "request tracker is full",
+    );
+  });
 });

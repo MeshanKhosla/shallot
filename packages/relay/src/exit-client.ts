@@ -15,17 +15,22 @@ export async function forwardToExit(
 
   let response: Response;
   try {
+    const upstreamSignal = AbortSignal.any([
+      signal,
+      AbortSignal.timeout(config.exitTimeoutMs),
+    ]);
     response = await config.fetch(config.exitUrl, {
       method: "POST",
       headers,
       body: rawBody,
-      signal,
+      signal: upstreamSignal,
     });
   } catch {
     throw new RelayHttpError(502, "Exit is unavailable", "upstream_connection_error");
   }
 
   if (!response.ok) {
+    await response.body?.cancel().catch(() => undefined);
     throw new RelayHttpError(
       response.status,
       `Exit rejected the request with status ${response.status}`,

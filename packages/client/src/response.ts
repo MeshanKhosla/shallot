@@ -26,8 +26,8 @@ async function* readNdjsonLines(
   signal: AbortSignal,
 ): AsyncGenerator<string> {
   const reader = body.getReader();
-  const decoder = new TextDecoder();
-  let pending = "";
+  const decoder = new TextDecoder("utf-8", { fatal: true });
+  let pending = Buffer.alloc(0);
   let reachedEnd = false;
   const cancelReader = () => {
     void reader.cancel(signal.reason).catch(() => undefined);
@@ -42,25 +42,28 @@ async function* readNdjsonLines(
         reachedEnd = true;
         break;
       }
-      pending += decoder.decode(value, { stream: true });
-      if (pending.length > maxLineBytes && !pending.includes("\n")) {
+      pending = Buffer.concat([pending, value], pending.byteLength + value.byteLength);
+      if (pending.byteLength > maxLineBytes && !pending.includes(0x0a)) {
         throw new Error("encrypted response frame exceeds the line limit");
       }
 
-      let newline = pending.indexOf("\n");
+      let newline = pending.indexOf(0x0a);
       while (newline !== -1) {
-        const line = pending.slice(0, newline).trim();
-        if (line.length > maxLineBytes) {
+        const lineBytes = pending.subarray(0, newline);
+        if (lineBytes.byteLength > maxLineBytes) {
           throw new Error("encrypted response frame exceeds the line limit");
         }
-        pending = pending.slice(newline + 1);
+        const line = decoder.decode(lineBytes).trim();
+        pending = pending.subarray(newline + 1);
         if (line) yield line;
-        newline = pending.indexOf("\n");
+        newline = pending.indexOf(0x0a);
       }
     }
 
-    pending += decoder.decode();
-    const finalLine = pending.trim();
+    if (pending.byteLength > maxLineBytes) {
+      throw new Error("encrypted response frame exceeds the line limit");
+    }
+    const finalLine = decoder.decode(pending).trim();
     if (finalLine) yield finalLine;
   } finally {
     signal.removeEventListener("abort", cancelReader);
@@ -143,9 +146,18 @@ async function openEncryptedResponse(
     config,
     cancellation.signal,
   );
-  const first = await frames.next();
-  if (first.done || first.value.kind !== "head") {
-    throw new Error("encrypted response is missing its head frame");
+  let first: IteratorResult<DecryptedFrame>;
+  let head: ResponseHead;
+  try {
+    first = await frames.next();
+    if (first.done || first.value.kind !== "head") {
+      throw new Error("encrypted response is missing its head frame");
+    }
+    head = decodeResponseHead(first.value.payload);
+  } catch (error) {
+    cancellation.abort("invalid encrypted response head");
+    await frames.return(undefined).catch(() => undefined);
+    throw error;
   }
 
   async function* data(): AsyncGenerator<Buffer> {
@@ -158,7 +170,7 @@ async function openEncryptedResponse(
   }
 
   return {
-    head: decodeResponseHead(first.value.payload),
+    head,
     data: data(),
     async cancel() {
       cancellation.abort("response consumer stopped");

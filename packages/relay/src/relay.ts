@@ -10,6 +10,7 @@ import type { Server } from "bun";
 import { loadConfig, type RelayConfig } from "./config.ts";
 import { RelayHttpError, relayErrorResponse } from "./errors.ts";
 import { forwardToExit } from "./exit-client.ts";
+import { RequestTrackerCapacityError } from "./request-tracker.ts";
 
 async function readEnvelope(
   req: Request,
@@ -43,6 +44,7 @@ async function readEnvelope(
 function proxyBody(
   body: ReadableStream<Uint8Array>,
   release: () => void,
+  observe?: (chunk: Uint8Array) => void,
 ): ReadableStream<Uint8Array> {
   const reader = body.getReader();
   let released = false;
@@ -60,6 +62,7 @@ function proxyBody(
           releaseOnce();
           controller.close();
         } else {
+          observe?.(result.value);
           controller.enqueue(result.value);
         }
       } catch (error) {
@@ -106,8 +109,19 @@ export function createRelayServer(config: RelayConfig = loadConfig()): Server<un
           req.headers.get("authorization"),
         );
         const { envelope, rawBody } = await readEnvelope(req, config.maxEnvelopeBytes);
-        if (!config.requestTracker.claim(tenant.id, envelope.requestId)) {
-          throw new RelayHttpError(409, "Request ID was replayed", "replay_error");
+        try {
+          if (!config.requestTracker.claim(tenant.id, envelope.requestId)) {
+            throw new RelayHttpError(409, "Request ID was replayed", "replay_error");
+          }
+        } catch (error) {
+          if (error instanceof RequestTrackerCapacityError) {
+            throw new RelayHttpError(
+              503,
+              "Relay request tracker is full",
+              "overloaded_error",
+            );
+          }
+          throw error;
         }
 
         const responseBody = await forwardToExit(rawBody, config, req.signal);
@@ -123,13 +137,16 @@ export function createRelayServer(config: RelayConfig = loadConfig()): Server<un
         });
 
         handedOff = true;
-        return new Response(proxyBody(responseBody, release), {
-          status: 200,
-          headers: {
-            "cache-control": "no-store",
-            "content-type": SEALED_STREAM_CONTENT_TYPE,
+        return new Response(
+          proxyBody(responseBody, release, config.observeResponseChunk),
+          {
+            status: 200,
+            headers: {
+              "cache-control": "no-store",
+              "content-type": SEALED_STREAM_CONTENT_TYPE,
+            },
           },
-        });
+        );
       } catch (error) {
         return relayErrorResponse(error);
       } finally {
