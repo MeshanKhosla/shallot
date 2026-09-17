@@ -1,0 +1,45 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Attach: Provider",
+      "type": "bun",
+      "request": "attach",
+      "url": "ws://127.0.0.1:6499/provider",
+      "stopOnEntry": false
+    },
+    {
+      "name": "Attach: Exit",
+      "type": "bun",
+      "request": "attach",
+      "url": "ws://127.0.0.1:6500/exit",
+      "stopOnEntry": false
+    },
+    {
+      "name": "Attach: Relay",
+      "type": "bun",
+      "request": "attach",
+      "url": "ws://127.0.0.1:6501/relay",
+      "stopOnEntry": false
+    },
+    {
+      "name": "Attach: Sidecar",
+      "type": "bun",
+      "request": "attach",
+      "url": "ws://127.0.0.1:6502/sidecar",
+      "stopOnEntry": false
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Attach: Local Shallot stack",
+      "configurations": [
+        "Attach: Provider",
+        "Attach: Exit",
+        "Attach: Relay",
+        "Attach: Sidecar"
+      ],
+      "stopAll": true
+    }
+  ]
+}

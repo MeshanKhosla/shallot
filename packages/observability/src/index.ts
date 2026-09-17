@@ -11,24 +11,12 @@ export interface DebugLogger {
   debug(event: string, view: Record<string, unknown>): void;
 }
 
-export type DebugLogFormat = "json" | "pretty";
-
 interface DebugLoggerOptions {
   enabled?: boolean;
-  format?: DebugLogFormat;
   sink?: (entry: DebugLogEntry) => void;
 }
 
-function logFormatFromEnvironment(): DebugLogFormat {
-  const format = process.env.SHALLOT_LOG_FORMAT ?? "json";
-  if (format !== "json" && format !== "pretty") {
-    throw new Error("SHALLOT_LOG_FORMAT must be json or pretty");
-  }
-  return format;
-}
-
-export function formatDebugEntry(entry: DebugLogEntry, format: DebugLogFormat): string {
-  if (format === "json") return JSON.stringify(entry);
+export function formatDebugEntry(entry: DebugLogEntry): string {
   const header = `${entry.timestamp}  DEBUG  ${entry.component}  ${entry.event}`;
   return `${header}\n${JSON.stringify(entry.view, null, 2)}`;
 }
@@ -47,10 +35,8 @@ export function createDebugLogger(
   options: DebugLoggerOptions = {},
 ): DebugLogger {
   const enabled = options.enabled ?? process.env.SHALLOT_LOG_LEVEL === "debug";
-  const format = options.format ?? logFormatFromEnvironment();
   const sink =
-    options.sink ??
-    ((entry: DebugLogEntry) => console.log(formatDebugEntry(entry, format)));
+    options.sink ?? ((entry: DebugLogEntry) => console.log(formatDebugEntry(entry)));
 
   return {
     enabled,

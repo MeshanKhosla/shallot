@@ -12,6 +12,7 @@
   "scripts": {
     "keygen": "bun scripts/generate-exit-key.ts",
     "dev:local": "bun scripts/local-stack.ts",
+    "dev:debug": "bun scripts/local-stack.ts --inspect",
     "benchmark": "bun benchmarks/run.ts",
     "format": "biome format --write .",
     "lint": "biome check .",

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { createLocalServices } from "./local-stack.ts";
+import { createLocalServiceCommand, createLocalServices } from "./local-stack.ts";
 
 const KEYS = {
   privateKey: "private-key",
@@ -49,5 +49,32 @@ describe("local stack", () => {
     expect(byName.sidecar?.SIDECAR_RELAY_URL).toBe(
       "http://127.0.0.1:18887/v1/chat/completions",
     );
+  });
+
+  test("assigns a stable inspector endpoint to each service", () => {
+    const services = createLocalServices("/repo", KEYS, {});
+
+    expect(services.map((service) => createLocalServiceCommand(service, true))).toEqual([
+      [
+        process.execPath,
+        "--inspect=127.0.0.1:6499/provider",
+        "/repo/packages/mock-provider/src/main.ts",
+      ],
+      [
+        process.execPath,
+        "--inspect=127.0.0.1:6500/exit",
+        "/repo/packages/exit/src/main.ts",
+      ],
+      [
+        process.execPath,
+        "--inspect=127.0.0.1:6501/relay",
+        "/repo/packages/relay/src/main.ts",
+      ],
+      [
+        process.execPath,
+        "--inspect=127.0.0.1:6502/sidecar",
+        "/repo/packages/client/src/main.ts",
+      ],
+    ]);
   });
 });

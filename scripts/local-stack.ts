@@ -13,6 +13,27 @@ export interface LocalService {
   environment: Record<string, string | undefined>;
 }
 
+interface LocalStackOptions {
+  inspect?: boolean;
+}
+
+const INSPECTOR_ENDPOINTS: Record<LocalService["name"], string> = {
+  provider: "127.0.0.1:6499/provider",
+  exit: "127.0.0.1:6500/exit",
+  relay: "127.0.0.1:6501/relay",
+  sidecar: "127.0.0.1:6502/sidecar",
+};
+
+export function createLocalServiceCommand(
+  service: LocalService,
+  inspect = false,
+): string[] {
+  const inspectArgument = inspect
+    ? [`--inspect=${INSPECTOR_ENDPOINTS[service.name]}`]
+    : [];
+  return [process.execPath, ...inspectArgument, service.entrypoint];
+}
+
 function readKeys(rootDirectory: string): LocalStackKeys {
   const keyDirectory = resolve(rootDirectory, ".shallot/keys");
   const privateKeyPath = resolve(keyDirectory, "exit-private.key");
@@ -50,7 +71,6 @@ export function createLocalServices(
   const common = {
     ...environment,
     SHALLOT_LOG_LEVEL: environment.SHALLOT_LOG_LEVEL ?? "debug",
-    SHALLOT_LOG_FORMAT: environment.SHALLOT_LOG_FORMAT ?? "pretty",
   };
 
   return [
@@ -108,11 +128,14 @@ async function stopChildren(children: Bun.Subprocess[]): Promise<void> {
   await Promise.all(children.map((child) => child.exited));
 }
 
-export async function runLocalStack(rootDirectory: string): Promise<number> {
+export async function runLocalStack(
+  rootDirectory: string,
+  options: LocalStackOptions = {},
+): Promise<number> {
   const services = createLocalServices(rootDirectory, readKeys(rootDirectory));
   const children = services.map((service) => {
     console.log(`[local-stack] starting ${service.name}`);
-    return Bun.spawn([process.execPath, service.entrypoint], {
+    return Bun.spawn(createLocalServiceCommand(service, options.inspect), {
       cwd: rootDirectory,
       env: service.environment,
       stdin: "ignore",
@@ -157,5 +180,11 @@ export async function runLocalStack(rootDirectory: string): Promise<number> {
 
 if (import.meta.main) {
   const rootDirectory = resolve(import.meta.dir, "..");
-  process.exitCode = await runLocalStack(rootDirectory);
+  const args = Bun.argv.slice(2);
+  if (args.some((argument) => argument !== "--inspect")) {
+    throw new Error("usage: bun scripts/local-stack.ts [--inspect]");
+  }
+  process.exitCode = await runLocalStack(rootDirectory, {
+    inspect: args.includes("--inspect"),
+  });
 }

@@ -25,7 +25,7 @@ bun run test:e2e
 
 ## Run the local stack
 
-Start all four services with local development credentials and pretty debug logs:
+Start all four services with local development credentials and readable debug logs:
 
 ```sh
 bun run dev:local
@@ -34,6 +34,17 @@ bun run dev:local
 The command creates `.shallot/keys` when needed and stops every service when it
 receives Ctrl-C. The individual commands are below for debugging one process at a
 time.
+
+To step through all four processes in VS Code, install the recommended Bun
+extension and start the inspector-enabled stack:
+
+```sh
+bun run dev:debug
+```
+
+Open Run and Debug, select `Attach: Local Shallot stack`, and press F5. The
+compound configuration attaches to Provider, Exit, Relay, and Sidecar. Set
+breakpoints before sending a request to `http://127.0.0.1:8788/v1`.
 
 Generate an X25519 Exit key pair. The private file is created with mode `0600`, is ignored by Git, and is never printed.
 
@@ -85,14 +96,10 @@ const result = await generateText({
 
 ### Debug each machine's view
 
-Set `SHALLOT_LOG_LEVEL=debug` on a process to print newline-delimited JSON for
-each request and response boundary. Relay logs identify the tenant but mark the
-prompt and answer as encrypted. Exit and the provider log plaintext content with
-the tenant set to `unknown`. Sidecar logs both plaintext directions on the client
-machine.
-
-Set `SHALLOT_LOG_FORMAT=pretty` for indented terminal output. The default `json`
-format emits one JSON object per line for log collectors.
+Set `SHALLOT_LOG_LEVEL=debug` on a process to print a labeled event followed by
+its indented data. Relay logs identify the tenant but mark the prompt and answer
+as encrypted. Exit and the provider log plaintext content with the tenant set to
+`unknown`. Sidecar logs both plaintext directions on the client machine.
 
 Debug logs intentionally contain prompt and response text on machines allowed to
 read it. Do not enable them in production or send them to a shared log service.
@@ -104,3 +111,6 @@ The privacy property requires the Relay and Exit not to collude. The Relay learn
 Shallot uses RFC 9180 HPKE with X25519/HKDF-SHA-256, HKDF-SHA-256, and AES-256-GCM. The static Exit recipient key does not provide forward secrecy if that private key is later compromised. This POC is not a substitute for an independent security review.
 
 Open the [animated request flow](docs/flow.html) for a visual walkthrough. See [the security model](docs/security.md) for precise guarantees and limitations, and [the implementation plan](docs/implementation-plan.md) for design detail.
+
+See [the separate-machine runbook](docs/separate-machines.md) to place Sidecar,
+Relay, and Exit on different hosts using restricted SSH tunnels.

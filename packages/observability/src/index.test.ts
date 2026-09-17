@@ -40,16 +40,13 @@ describe("debug logger", () => {
   });
 
   test("formats terminal output with a readable header and indented view", () => {
-    const output = formatDebugEntry(
-      {
-        timestamp: "2026-09-16T19:25:45.851Z",
-        level: "debug",
-        component: "sidecar",
-        event: "request.received",
-        view: { tenantCredential: "present", request: { model: "mock-text" } },
-      },
-      "pretty",
-    );
+    const output = formatDebugEntry({
+      timestamp: "2026-09-16T19:25:45.851Z",
+      level: "debug",
+      component: "sidecar",
+      event: "request.received",
+      view: { tenantCredential: "present", request: { model: "mock-text" } },
+    });
 
     expect(output).toBe(
       '2026-09-16T19:25:45.851Z  DEBUG  sidecar  request.received\n{\n  "tenantCredential": "present",\n  "request": {\n    "model": "mock-text"\n  }\n}',
