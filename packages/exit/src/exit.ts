@@ -31,63 +31,41 @@ import { sealProviderResponse } from "./response-sealer.ts";
 import { sanitizeChatRequest } from "./sanitize-request.ts";
 import { requireRelayAuthorization } from "./service-auth.ts";
 
-function expectedSync<A, E>(
-  evaluate: () => A,
-  guard: (cause: unknown) => cause is E,
-): Effect.Effect<A, E> {
-  return Effect.try({
-    try: evaluate,
-    catch: (cause) => {
-      if (guard(cause)) return cause;
-      throw cause;
+export type ExitServices = LlmProvider | ReplayProtection;
+
+export function createExitServer(
+  config: ExitConfig,
+  services: Layer.Layer<ExitServices> = exitLive(config),
+): Server<undefined> {
+  const logger = createDebugLogger("exit");
+  const runtime = ManagedRuntime.make(services);
+  const server = Bun.serve({
+    port: config.port,
+    hostname: config.hostname,
+    idleTimeout: 60,
+    fetch(req) {
+      const program = handleExitRequest(req, config, logger).pipe(
+        Effect.catch((error) => Effect.succeed(exitErrorResponse(error))),
+        Effect.catchCause(recoverDefect("exit", exitDefectResponse)),
+      );
+      return runtime
+        .runPromise(program, { signal: req.signal })
+        .catch(exitDefectResponse);
     },
   });
+  return bindRuntimeLifecycle(server, runtime);
 }
 
-function readEnvelope(
-  req: Request,
-  maxBytes: number,
-): Effect.Effect<SealedRequest, ExitRequestTooLarge | ExitInvalidRequest> {
-  const readBody = Effect.tryPromise({
-    try: () => readLimitedBody(req, maxBytes),
-    catch: (cause) => {
-      if (cause instanceof BodyTooLargeError) return new ExitRequestTooLarge();
-      throw cause;
-    },
-  });
-
-  return Effect.gen(function* () {
-    const body = yield* readBody;
-    return yield* Effect.try({
-      try: () => parseSealedRequest(JSON.parse(new TextDecoder().decode(body))),
-      catch: () => new ExitInvalidRequest({ message: "Invalid encrypted request" }),
-    });
-  });
-}
-
-function openEnvelope(
-  envelope: SealedRequest,
-  config: ExitConfig,
-): Effect.Effect<OpenedRequestContext, ExitInvalidRequest> {
-  const privateKey = config.privateKeys.get(envelope.keyId);
-  if (!privateKey) {
-    return Effect.fail(new ExitInvalidRequest({ message: "Unknown Exit key" }));
-  }
-  return Effect.tryPromise({
-    try: () => openRequest(envelope, privateKey),
-    catch: () => new ExitInvalidRequest({ message: "Invalid encrypted request" }),
-  });
-}
-
-function sealResponse(
-  response: Response,
-  opened: OpenedRequestContext,
-  requestId: string,
-  config: ExitConfig,
-  logger: ReturnType<typeof createDebugLogger>,
-): Effect.Effect<Response> {
-  return Effect.promise(() =>
-    sealProviderResponse(response, opened.responsePublicKey, requestId, config, logger),
+export function exitLive(config: ExitConfig): Layer.Layer<ExitServices> {
+  return Layer.mergeAll(
+    openAICompatibleProviderLayer({
+      url: config.llm.url,
+      apiKey: config.llm.apiKey,
+      timeoutMs: config.llm.timeoutMs,
+    }),
+    replayProtectionLayer(
+      new MemoryReplayCache(config.replayTtlMs, Date.now, config.replayMaxEntries),
+    ),
   );
 }
 
@@ -160,40 +138,62 @@ export const handleExitRequest = Effect.fn("handleExitRequest")(function* (
   );
 });
 
-export type ExitServices = LlmProvider | ReplayProtection;
-
-export function exitLive(config: ExitConfig): Layer.Layer<ExitServices> {
-  return Layer.mergeAll(
-    openAICompatibleProviderLayer({
-      url: config.llm.url,
-      apiKey: config.llm.apiKey,
-      timeoutMs: config.llm.timeoutMs,
-    }),
-    replayProtectionLayer(
-      new MemoryReplayCache(config.replayTtlMs, Date.now, config.replayMaxEntries),
-    ),
-  );
-}
-
-export function createExitServer(
-  config: ExitConfig,
-  services: Layer.Layer<ExitServices> = exitLive(config),
-): Server<undefined> {
-  const logger = createDebugLogger("exit");
-  const runtime = ManagedRuntime.make(services);
-  const server = Bun.serve({
-    port: config.port,
-    hostname: config.hostname,
-    idleTimeout: 60,
-    fetch(req) {
-      const program = handleExitRequest(req, config, logger).pipe(
-        Effect.catch((error) => Effect.succeed(exitErrorResponse(error))),
-        Effect.catchCause(recoverDefect("exit", exitDefectResponse)),
-      );
-      return runtime
-        .runPromise(program, { signal: req.signal })
-        .catch(exitDefectResponse);
+function expectedSync<A, E>(
+  evaluate: () => A,
+  guard: (cause: unknown) => cause is E,
+): Effect.Effect<A, E> {
+  return Effect.try({
+    try: evaluate,
+    catch: (cause) => {
+      if (guard(cause)) return cause;
+      throw cause;
     },
   });
-  return bindRuntimeLifecycle(server, runtime);
+}
+
+function readEnvelope(
+  req: Request,
+  maxBytes: number,
+): Effect.Effect<SealedRequest, ExitRequestTooLarge | ExitInvalidRequest> {
+  const readBody = Effect.tryPromise({
+    try: () => readLimitedBody(req, maxBytes),
+    catch: (cause) => {
+      if (cause instanceof BodyTooLargeError) return new ExitRequestTooLarge();
+      throw cause;
+    },
+  });
+
+  return Effect.gen(function* () {
+    const body = yield* readBody;
+    return yield* Effect.try({
+      try: () => parseSealedRequest(JSON.parse(new TextDecoder().decode(body))),
+      catch: () => new ExitInvalidRequest({ message: "Invalid encrypted request" }),
+    });
+  });
+}
+
+function openEnvelope(
+  envelope: SealedRequest,
+  config: ExitConfig,
+): Effect.Effect<OpenedRequestContext, ExitInvalidRequest> {
+  const privateKey = config.privateKeys.get(envelope.keyId);
+  if (!privateKey) {
+    return Effect.fail(new ExitInvalidRequest({ message: "Unknown Exit key" }));
+  }
+  return Effect.tryPromise({
+    try: () => openRequest(envelope, privateKey),
+    catch: () => new ExitInvalidRequest({ message: "Invalid encrypted request" }),
+  });
+}
+
+function sealResponse(
+  response: Response,
+  opened: OpenedRequestContext,
+  requestId: string,
+  config: ExitConfig,
+  logger: ReturnType<typeof createDebugLogger>,
+): Effect.Effect<Response> {
+  return Effect.promise(() =>
+    sealProviderResponse(response, opened.responsePublicKey, requestId, config, logger),
+  );
 }

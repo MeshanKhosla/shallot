@@ -18,30 +18,34 @@ import {
 import { RelayClient, relayClientLayer } from "./relay.ts";
 import { createBufferedResponse, createStreamingResponse } from "./response.ts";
 
-function expectedPromise<A, E>(
-  evaluate: () => Promise<A>,
-  guard: (cause: unknown) => cause is E,
-): Effect.Effect<A, E> {
-  return Effect.tryPromise({
-    try: evaluate,
-    catch: (cause) => {
-      if (guard(cause)) return cause;
-      throw cause;
+export function createSidecarServer(
+  config: SidecarConfig = loadConfig(),
+  services: Layer.Layer<RelayClient> = sidecarLive(config),
+): Server<undefined> {
+  const logger = createDebugLogger("sidecar");
+  const runtime = ManagedRuntime.make(services);
+  const server = Bun.serve({
+    port: config.port,
+    hostname: config.hostname,
+    idleTimeout: 60,
+    fetch(req) {
+      const program = handleSidecarRequest(req, config, logger).pipe(
+        Effect.catch((error) => Effect.succeed(sidecarErrorResponse(error))),
+        Effect.catchCause(recoverDefect("sidecar", sidecarDefectResponse)),
+      );
+      return runtime
+        .runPromise(program, { signal: req.signal })
+        .catch(sidecarDefectResponse);
     },
   });
+  return bindRuntimeLifecycle(server, runtime);
 }
 
-function isRequestReadError(
-  cause: unknown,
-): cause is
-  | SidecarUnsupportedContentType
-  | SidecarInvalidRequest
-  | SidecarRequestTooLarge {
-  return (
-    cause instanceof SidecarUnsupportedContentType ||
-    cause instanceof SidecarInvalidRequest ||
-    cause instanceof SidecarRequestTooLarge
-  );
+export function sidecarLive(config: SidecarConfig): Layer.Layer<RelayClient> {
+  return relayClientLayer({
+    url: config.relayUrl,
+    timeoutMs: config.relayTimeoutMs,
+  });
 }
 
 export const handleSidecarRequest = Effect.fn("handleSidecarRequest")(function* (
@@ -107,32 +111,28 @@ export const handleSidecarRequest = Effect.fn("handleSidecarRequest")(function* 
   );
 });
 
-export function sidecarLive(config: SidecarConfig): Layer.Layer<RelayClient> {
-  return relayClientLayer({
-    url: config.relayUrl,
-    timeoutMs: config.relayTimeoutMs,
+function expectedPromise<A, E>(
+  evaluate: () => Promise<A>,
+  guard: (cause: unknown) => cause is E,
+): Effect.Effect<A, E> {
+  return Effect.tryPromise({
+    try: evaluate,
+    catch: (cause) => {
+      if (guard(cause)) return cause;
+      throw cause;
+    },
   });
 }
 
-export function createSidecarServer(
-  config: SidecarConfig = loadConfig(),
-  services: Layer.Layer<RelayClient> = sidecarLive(config),
-): Server<undefined> {
-  const logger = createDebugLogger("sidecar");
-  const runtime = ManagedRuntime.make(services);
-  const server = Bun.serve({
-    port: config.port,
-    hostname: config.hostname,
-    idleTimeout: 60,
-    fetch(req) {
-      const program = handleSidecarRequest(req, config, logger).pipe(
-        Effect.catch((error) => Effect.succeed(sidecarErrorResponse(error))),
-        Effect.catchCause(recoverDefect("sidecar", sidecarDefectResponse)),
-      );
-      return runtime
-        .runPromise(program, { signal: req.signal })
-        .catch(sidecarDefectResponse);
-    },
-  });
-  return bindRuntimeLifecycle(server, runtime);
+function isRequestReadError(
+  cause: unknown,
+): cause is
+  | SidecarUnsupportedContentType
+  | SidecarInvalidRequest
+  | SidecarRequestTooLarge {
+  return (
+    cause instanceof SidecarUnsupportedContentType ||
+    cause instanceof SidecarInvalidRequest ||
+    cause instanceof SidecarRequestTooLarge
+  );
 }

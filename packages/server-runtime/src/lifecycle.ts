@@ -16,6 +16,7 @@ export function bindRuntimeLifecycle(
   let shutdown: Promise<void> | undefined;
 
   server.stop = (closeActiveConnections?: boolean) => {
+    // Reuse the first shutdown so Bun and the runtime are each stopped once.
     shutdown ??= (async () => {
       let stopFailure: unknown;
       try {

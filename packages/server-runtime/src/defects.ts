@@ -9,10 +9,6 @@ export interface DefectDiagnostic {
 
 export type DefectReporter = (diagnostic: DefectDiagnostic) => void;
 
-const reportToConsole: DefectReporter = (diagnostic) => {
-  console.error(JSON.stringify(diagnostic));
-};
-
 export function recoverDefect(
   component: string,
   response: () => Response,
@@ -22,6 +18,7 @@ export function recoverDefect(
     if (Cause.hasInterruptsOnly(cause)) return Effect.failCause(cause);
 
     return Effect.sync(() => {
+      // The reporter never receives the cause because its message may contain secrets.
       report({
         component,
         event: "request.defect",
@@ -31,3 +28,7 @@ export function recoverDefect(
     });
   };
 }
+
+const reportToConsole: DefectReporter = (diagnostic) => {
+  console.error(JSON.stringify(diagnostic));
+};

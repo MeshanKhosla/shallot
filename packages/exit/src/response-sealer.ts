@@ -17,107 +17,6 @@ interface ResponseSealingConfig {
   llm: { maxResponseBytes: number };
 }
 
-interface ReadResult {
-  done?: boolean;
-  value?: Uint8Array;
-}
-
-async function waitForRead(
-  pendingRead: Promise<ReadResult>,
-  timeoutMs: number | undefined,
-): Promise<{ type: "read"; result: ReadResult } | { type: "timeout" }> {
-  if (timeoutMs === undefined) {
-    return { type: "read", result: await pendingRead };
-  }
-
-  return await new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => resolve({ type: "timeout" }), timeoutMs);
-    pendingRead.then(
-      (result) => {
-        clearTimeout(timeout);
-        resolve({ type: "read", result });
-      },
-      (error) => {
-        clearTimeout(timeout);
-        reject(error);
-      },
-    );
-  });
-}
-
-async function* coalesceResponseBody(
-  body: ReadableStream<Uint8Array> | null,
-  maxFramePayloadBytes: number,
-  flushMs: number,
-  maxResponseBytes: number,
-  signal: AbortSignal,
-): AsyncGenerator<Buffer> {
-  if (!body) return;
-
-  const reader = body.getReader();
-  const queue = new ByteQueue();
-  let totalBytes = 0;
-  let pendingRead = reader.read();
-  let reachedEnd = false;
-  const cancelReader = () => {
-    void reader.cancel(signal.reason).catch(() => undefined);
-  };
-  if (signal.aborted) cancelReader();
-  else signal.addEventListener("abort", cancelReader, { once: true });
-
-  try {
-    while (true) {
-      while (queue.length >= maxFramePayloadBytes) {
-        yield queue.take(maxFramePayloadBytes);
-      }
-
-      const event = await waitForRead(
-        pendingRead,
-        queue.length > 0 ? flushMs : undefined,
-      );
-      if (event.type === "timeout") {
-        yield queue.take(maxFramePayloadBytes);
-        continue;
-      }
-
-      if (event.result.done === true) {
-        reachedEnd = true;
-        break;
-      }
-      if (!event.result.value) throw new Error("provider stream returned no data");
-      totalBytes += event.result.value.byteLength;
-      if (totalBytes > maxResponseBytes) {
-        await reader.cancel("provider response exceeded the configured limit");
-        throw new Error("provider response is too large");
-      }
-      queue.push(event.result.value);
-      pendingRead = reader.read();
-    }
-
-    while (queue.length > 0) {
-      yield queue.take(maxFramePayloadBytes);
-    }
-  } finally {
-    signal.removeEventListener("abort", cancelReader);
-    if (!reachedEnd) {
-      await reader.cancel("encrypted response consumer stopped").catch(() => undefined);
-    }
-    reader.releaseLock();
-  }
-}
-
-function serializeFrame(frame: unknown): Uint8Array {
-  return Buffer.from(`${JSON.stringify(frame)}\n`);
-}
-
-function responseContentType(
-  response: Response,
-): "application/json" | "text/event-stream; charset=utf-8" {
-  return response.headers.get("content-type")?.startsWith("text/event-stream")
-    ? "text/event-stream; charset=utf-8"
-    : "application/json";
-}
-
 export async function sealProviderResponse(
   providerResponse: Response,
   responsePublicKey: CryptoKey,
@@ -227,4 +126,105 @@ export async function sealProviderResponse(
       "content-type": SEALED_STREAM_CONTENT_TYPE,
     },
   });
+}
+
+interface ReadResult {
+  done?: boolean;
+  value?: Uint8Array;
+}
+
+async function waitForRead(
+  pendingRead: Promise<ReadResult>,
+  timeoutMs: number | undefined,
+): Promise<{ type: "read"; result: ReadResult } | { type: "timeout" }> {
+  if (timeoutMs === undefined) {
+    return { type: "read", result: await pendingRead };
+  }
+
+  return await new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => resolve({ type: "timeout" }), timeoutMs);
+    pendingRead.then(
+      (result) => {
+        clearTimeout(timeout);
+        resolve({ type: "read", result });
+      },
+      (error) => {
+        clearTimeout(timeout);
+        reject(error);
+      },
+    );
+  });
+}
+
+async function* coalesceResponseBody(
+  body: ReadableStream<Uint8Array> | null,
+  maxFramePayloadBytes: number,
+  flushMs: number,
+  maxResponseBytes: number,
+  signal: AbortSignal,
+): AsyncGenerator<Buffer> {
+  if (!body) return;
+
+  const reader = body.getReader();
+  const queue = new ByteQueue();
+  let totalBytes = 0;
+  let pendingRead = reader.read();
+  let reachedEnd = false;
+  const cancelReader = () => {
+    void reader.cancel(signal.reason).catch(() => undefined);
+  };
+  if (signal.aborted) cancelReader();
+  else signal.addEventListener("abort", cancelReader, { once: true });
+
+  try {
+    while (true) {
+      while (queue.length >= maxFramePayloadBytes) {
+        yield queue.take(maxFramePayloadBytes);
+      }
+
+      const event = await waitForRead(
+        pendingRead,
+        queue.length > 0 ? flushMs : undefined,
+      );
+      if (event.type === "timeout") {
+        yield queue.take(maxFramePayloadBytes);
+        continue;
+      }
+
+      if (event.result.done === true) {
+        reachedEnd = true;
+        break;
+      }
+      if (!event.result.value) throw new Error("provider stream returned no data");
+      totalBytes += event.result.value.byteLength;
+      if (totalBytes > maxResponseBytes) {
+        await reader.cancel("provider response exceeded the configured limit");
+        throw new Error("provider response is too large");
+      }
+      queue.push(event.result.value);
+      pendingRead = reader.read();
+    }
+
+    while (queue.length > 0) {
+      yield queue.take(maxFramePayloadBytes);
+    }
+  } finally {
+    signal.removeEventListener("abort", cancelReader);
+    if (!reachedEnd) {
+      await reader.cancel("encrypted response consumer stopped").catch(() => undefined);
+    }
+    reader.releaseLock();
+  }
+}
+
+function serializeFrame(frame: unknown): Uint8Array {
+  return Buffer.from(`${JSON.stringify(frame)}\n`);
+}
+
+function responseContentType(
+  response: Response,
+): "application/json" | "text/event-stream; charset=utf-8" {
+  return response.headers.get("content-type")?.startsWith("text/event-stream")
+    ? "text/event-stream; charset=utf-8"
+    : "application/json";
 }

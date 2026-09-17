@@ -15,6 +15,95 @@ import {
 import type { SidecarConfig } from "./config.ts";
 import { MalformedEncryptedResponse } from "./errors.ts";
 
+export async function createStreamingResponse(
+  body: ReadableStream<Uint8Array>,
+  responsePrivateKey: CryptoKey,
+  requestId: string,
+  config: SidecarConfig,
+  logger: DebugLogger = createDebugLogger("sidecar"),
+): Promise<Response> {
+  let opened: OpenedResponse;
+  try {
+    opened = await openEncryptedResponse(
+      body,
+      responsePrivateKey,
+      requestId,
+      config,
+      logger,
+    );
+  } catch {
+    throw new MalformedEncryptedResponse();
+  }
+
+  const stream = new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      try {
+        const chunk = await opened.data.next();
+        if (chunk.done) {
+          controller.close();
+        } else {
+          controller.enqueue(chunk.value);
+        }
+      } catch (error) {
+        controller.error(error);
+      }
+    },
+    async cancel() {
+      await opened.cancel();
+    },
+  });
+
+  return new Response(stream, {
+    status: opened.head.status,
+    headers: {
+      "cache-control": "no-cache, no-transform",
+      connection: "keep-alive",
+      "content-type": opened.head.contentType,
+      "x-accel-buffering": "no",
+    },
+  });
+}
+
+export async function createBufferedResponse(
+  body: ReadableStream<Uint8Array>,
+  responsePrivateKey: CryptoKey,
+  requestId: string,
+  config: SidecarConfig,
+  logger: DebugLogger = createDebugLogger("sidecar"),
+): Promise<Response> {
+  const chunks: Uint8Array[] = [];
+  let totalLength = 0;
+  let opened: OpenedResponse;
+
+  try {
+    opened = await openEncryptedResponse(
+      body,
+      responsePrivateKey,
+      requestId,
+      config,
+      logger,
+    );
+    for await (const chunk of opened.data) {
+      chunks.push(chunk);
+      totalLength += chunk.byteLength;
+    }
+  } catch {
+    throw new MalformedEncryptedResponse();
+  }
+
+  const responseBody = new Uint8Array(totalLength);
+  let offset = 0;
+  for (const chunk of chunks) {
+    responseBody.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+
+  return new Response(responseBody, {
+    status: opened.head.status,
+    headers: { "content-type": opened.head.contentType },
+  });
+}
+
 function parseFrame(line: string): SealedFrame {
   let value: unknown;
   try {
@@ -195,93 +284,4 @@ async function openEncryptedResponse(
       await frames.return(undefined);
     },
   };
-}
-
-export async function createStreamingResponse(
-  body: ReadableStream<Uint8Array>,
-  responsePrivateKey: CryptoKey,
-  requestId: string,
-  config: SidecarConfig,
-  logger: DebugLogger = createDebugLogger("sidecar"),
-): Promise<Response> {
-  let opened: OpenedResponse;
-  try {
-    opened = await openEncryptedResponse(
-      body,
-      responsePrivateKey,
-      requestId,
-      config,
-      logger,
-    );
-  } catch {
-    throw new MalformedEncryptedResponse();
-  }
-
-  const stream = new ReadableStream<Uint8Array>({
-    async pull(controller) {
-      try {
-        const chunk = await opened.data.next();
-        if (chunk.done) {
-          controller.close();
-        } else {
-          controller.enqueue(chunk.value);
-        }
-      } catch (error) {
-        controller.error(error);
-      }
-    },
-    async cancel() {
-      await opened.cancel();
-    },
-  });
-
-  return new Response(stream, {
-    status: opened.head.status,
-    headers: {
-      "cache-control": "no-cache, no-transform",
-      connection: "keep-alive",
-      "content-type": opened.head.contentType,
-      "x-accel-buffering": "no",
-    },
-  });
-}
-
-export async function createBufferedResponse(
-  body: ReadableStream<Uint8Array>,
-  responsePrivateKey: CryptoKey,
-  requestId: string,
-  config: SidecarConfig,
-  logger: DebugLogger = createDebugLogger("sidecar"),
-): Promise<Response> {
-  const chunks: Uint8Array[] = [];
-  let totalLength = 0;
-  let opened: OpenedResponse;
-
-  try {
-    opened = await openEncryptedResponse(
-      body,
-      responsePrivateKey,
-      requestId,
-      config,
-      logger,
-    );
-    for await (const chunk of opened.data) {
-      chunks.push(chunk);
-      totalLength += chunk.byteLength;
-    }
-  } catch {
-    throw new MalformedEncryptedResponse();
-  }
-
-  const responseBody = new Uint8Array(totalLength);
-  let offset = 0;
-  for (const chunk of chunks) {
-    responseBody.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-
-  return new Response(responseBody, {
-    status: opened.head.status,
-    headers: { "content-type": opened.head.contentType },
-  });
 }

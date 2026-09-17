@@ -15,6 +15,28 @@ export interface ParsedChatRequest {
   value: ChatRequest;
 }
 
+export async function readChatRequest(
+  req: Request,
+  maxRequestBytes: number,
+): Promise<ParsedChatRequest> {
+  const mediaType = req.headers.get("content-type")?.split(";", 1).at(0)?.trim();
+  if (mediaType !== "application/json") {
+    throw new SidecarUnsupportedContentType();
+  }
+
+  let body: Uint8Array;
+  try {
+    body = await readLimitedBody(req, maxRequestBytes);
+  } catch (error) {
+    if (error instanceof BodyTooLargeError) {
+      throw new SidecarRequestTooLarge();
+    }
+    throw error;
+  }
+
+  return { body, value: parseJsonObject(body) };
+}
+
 function parseJsonObject(body: Uint8Array): ChatRequest {
   let value: unknown;
   try {
@@ -36,26 +58,4 @@ function parseJsonObject(body: Uint8Array): ChatRequest {
     throw new SidecarInvalidRequest({ message: "stream must be a boolean" });
   }
   return request;
-}
-
-export async function readChatRequest(
-  req: Request,
-  maxRequestBytes: number,
-): Promise<ParsedChatRequest> {
-  const mediaType = req.headers.get("content-type")?.split(";", 1).at(0)?.trim();
-  if (mediaType !== "application/json") {
-    throw new SidecarUnsupportedContentType();
-  }
-
-  let body: Uint8Array;
-  try {
-    body = await readLimitedBody(req, maxRequestBytes);
-  } catch (error) {
-    if (error instanceof BodyTooLargeError) {
-      throw new SidecarRequestTooLarge();
-    }
-    throw error;
-  }
-
-  return { body, value: parseJsonObject(body) };
 }

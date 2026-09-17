@@ -18,6 +18,29 @@ export interface MockProviderHooks {
   readonly observeCancellation?: () => void;
 }
 
+export function createMockProviderServer(
+  config: MockProviderConfig = loadConfig(),
+  hooks: MockProviderHooks = {},
+): Server<undefined> {
+  const logger = createDebugLogger("provider");
+  const runtime = ManagedRuntime.make(Layer.empty);
+  const server = Bun.serve({
+    port: config.port,
+    hostname: config.hostname,
+    idleTimeout: 60,
+    fetch(req) {
+      const program = handleMockProviderRequest(req, config, logger, hooks).pipe(
+        Effect.catch((error) => Effect.succeed(providerErrorResponse(error))),
+        Effect.catchCause(recoverDefect("mock-provider", providerDefectResponse)),
+      );
+      return runtime
+        .runPromise(program, { signal: req.signal })
+        .catch(providerDefectResponse);
+    },
+  });
+  return bindRuntimeLifecycle(server, runtime);
+}
+
 export const handleMockProviderRequest = Effect.fn("handleMockProviderRequest")(
   function* (
     req: Request,
@@ -73,26 +96,3 @@ export const handleMockProviderRequest = Effect.fn("handleMockProviderRequest")(
     return response;
   },
 );
-
-export function createMockProviderServer(
-  config: MockProviderConfig = loadConfig(),
-  hooks: MockProviderHooks = {},
-): Server<undefined> {
-  const logger = createDebugLogger("provider");
-  const runtime = ManagedRuntime.make(Layer.empty);
-  const server = Bun.serve({
-    port: config.port,
-    hostname: config.hostname,
-    idleTimeout: 60,
-    fetch(req) {
-      const program = handleMockProviderRequest(req, config, logger, hooks).pipe(
-        Effect.catch((error) => Effect.succeed(providerErrorResponse(error))),
-        Effect.catchCause(recoverDefect("mock-provider", providerDefectResponse)),
-      );
-      return runtime
-        .runPromise(program, { signal: req.signal })
-        .catch(providerDefectResponse);
-    },
-  });
-  return bindRuntimeLifecycle(server, runtime);
-}

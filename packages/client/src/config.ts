@@ -14,15 +14,6 @@ export interface SidecarConfig {
   maxResponseBytes: number;
 }
 
-function positiveInteger(name: string, fallback: number): number {
-  const raw = process.env[name];
-  const value = raw === undefined ? fallback : Number(raw);
-  if (!Number.isSafeInteger(value) || value <= 0) {
-    throw new Error(`${name} must be a positive integer`);
-  }
-  return value;
-}
-
 export function loadConfig(): SidecarConfig {
   const publicKey = process.env.SIDECAR_EXIT_PUBLIC_KEY;
   if (!publicKey) {
@@ -46,4 +37,13 @@ export function loadConfig(): SidecarConfig {
     maxResponseFrames: positiveInteger("SIDECAR_MAX_RESPONSE_FRAMES", 10_000),
     maxResponseBytes: positiveInteger("SIDECAR_MAX_RESPONSE_BYTES", 16 * 1024 * 1024),
   };
+}
+
+function positiveInteger(name: string, fallback: number): number {
+  const raw = process.env[name];
+  const value = raw === undefined ? fallback : Number(raw);
+  if (!Number.isSafeInteger(value) || value <= 0) {
+    throw new Error(`${name} must be a positive integer`);
+  }
+  return value;
 }

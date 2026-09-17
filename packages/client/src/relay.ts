@@ -7,17 +7,6 @@ import {
   RelayTransportFailure,
 } from "./errors.ts";
 
-function relayHeaders(req: Request): Headers {
-  const headers = new Headers({
-    accept: SEALED_STREAM_CONTENT_TYPE,
-    "content-type": "application/json",
-  });
-  const authorization = req.headers.get("authorization");
-
-  if (authorization) headers.set("authorization", authorization);
-  return headers;
-}
-
 export type RelayClientError =
   | RelayTimeout
   | RelayTransportFailure
@@ -85,4 +74,15 @@ export function relayClientLayer(
         return response.body;
       }),
   });
+}
+
+function relayHeaders(req: Request): Headers {
+  const headers = new Headers({
+    accept: SEALED_STREAM_CONTENT_TYPE,
+    "content-type": "application/json",
+  });
+  const authorization = req.headers.get("authorization");
+
+  if (authorization) headers.set("authorization", authorization);
+  return headers;
 }

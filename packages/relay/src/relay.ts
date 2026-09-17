@@ -41,6 +41,134 @@ export interface RelayHooks {
   readonly observeResponseChunk?: (chunk: Uint8Array) => void;
 }
 
+export type RelayServices =
+  | ConcurrencyLimiter
+  | TenantAuthenticator
+  | RequestTracker
+  | ExitClient;
+
+export function createRelayServer(
+  config: RelayConfig = loadConfig(),
+  services: Layer.Layer<RelayServices> = relayLive(config),
+  hooks: RelayHooks = {},
+): Server<undefined> {
+  const logger = createDebugLogger("relay");
+  const runtime = ManagedRuntime.make(services);
+  const server = Bun.serve({
+    port: config.port,
+    hostname: config.hostname,
+    idleTimeout: 60,
+    fetch(req) {
+      const program = handleRelayRequest(req, config, logger, hooks).pipe(
+        Effect.catch((error) => Effect.succeed(relayErrorResponse(error))),
+        Effect.catchCause(recoverDefect("relay", relayDefectResponse)),
+      );
+      return runtime
+        .runPromise(program, { signal: req.signal })
+        .catch(relayDefectResponse);
+    },
+  });
+  return bindRuntimeLifecycle(server, runtime);
+}
+
+export function relayLive(config: RelayConfig): Layer.Layer<RelayServices> {
+  return Layer.mergeAll(
+    tenantAuthenticatorLayer(config.tenantTokens),
+    requestTrackerLayer({
+      ttlMs: config.requestTtlMs,
+      maxEntries: config.maxRequestEntries,
+      maxEntriesPerTenant: config.maxRequestEntriesPerTenant,
+    }),
+    concurrencyLimiterLayer(config.maxConcurrentRequests),
+    exitClientLayer({
+      url: config.exitUrl,
+      token: config.exitToken,
+      timeoutMs: config.exitTimeoutMs,
+    }),
+  );
+}
+
+export const handleRelayRequest = Effect.fn("handleRelayRequest")(function* (
+  req: Request,
+  config: RelayConfig,
+  logger = createDebugLogger("relay"),
+  hooks: RelayHooks = {},
+): Effect.fn.Return<
+  Response,
+  RelayRequestError,
+  ConcurrencyLimiter | TenantAuthenticator | RequestTracker | ExitClient
+> {
+  const url = new URL(req.url);
+  if (req.method !== "POST" || url.pathname !== PATHS.chat) {
+    return yield* new RelayRouteNotFound();
+  }
+
+  const limiter = yield* ConcurrencyLimiter;
+  const permit = yield* limiter.acquire();
+  let handedOff = false;
+
+  return yield* Effect.gen(function* () {
+    const authenticator = yield* TenantAuthenticator;
+    const tenant = yield* authenticator.authenticate(req.headers.get("authorization"));
+    const { envelope, rawBody } = yield* readEnvelope(req, config.maxEnvelopeBytes);
+    yield* Effect.sync(() =>
+      logger.debug("request.received", {
+        tenantId: tenant.id,
+        requestId: envelope.requestId,
+        keyId: envelope.keyId,
+        prompt: formatCiphertextPreview(envelope.ciphertext),
+        ciphertextCharacters: envelope.ciphertext.length,
+      }),
+    );
+
+    const requestTracker = yield* RequestTracker;
+    if (!(yield* requestTracker.claim(tenant.id, envelope.requestId))) {
+      return yield* new RelayReplayDetected();
+    }
+
+    const exitClient = yield* ExitClient;
+    const responseBody = yield* exitClient.forward(rawBody, req.signal);
+    yield* Effect.sync(() => {
+      const forwardedHeaders = new Headers({
+        authorization: `Bearer ${config.exitToken}`,
+        "content-type": "application/json",
+      });
+      hooks.observe?.({
+        tenantId: tenant.id,
+        requestId: envelope.requestId,
+        body: rawBody,
+        forwardedHeaders,
+      });
+    });
+
+    // The Effect owns the permit until the response body takes over its cleanup.
+    handedOff = true;
+    return new Response(
+      proxyBody(responseBody, permit, (chunk) => {
+        logger.debug("response.chunk.received", {
+          tenantId: tenant.id,
+          requestId: envelope.requestId,
+          encryptedBytes: chunk.byteLength,
+        });
+        hooks.observeResponseChunk?.(chunk);
+      }),
+      {
+        status: 200,
+        headers: {
+          "cache-control": "no-store",
+          "content-type": SEALED_STREAM_CONTENT_TYPE,
+        },
+      },
+    );
+  }).pipe(
+    Effect.ensuring(
+      Effect.sync(() => {
+        if (!handedOff) permit.release();
+      }),
+    ),
+  );
+});
+
 function readEnvelope(
   req: Request,
   maxBytes: number,
@@ -100,131 +228,4 @@ function proxyBody(
       reader.releaseLock();
     },
   });
-}
-
-export const handleRelayRequest = Effect.fn("handleRelayRequest")(function* (
-  req: Request,
-  config: RelayConfig,
-  logger = createDebugLogger("relay"),
-  hooks: RelayHooks = {},
-): Effect.fn.Return<
-  Response,
-  RelayRequestError,
-  ConcurrencyLimiter | TenantAuthenticator | RequestTracker | ExitClient
-> {
-  const url = new URL(req.url);
-  if (req.method !== "POST" || url.pathname !== PATHS.chat) {
-    return yield* new RelayRouteNotFound();
-  }
-
-  const limiter = yield* ConcurrencyLimiter;
-  const permit = yield* limiter.acquire();
-  let handedOff = false;
-
-  return yield* Effect.gen(function* () {
-    const authenticator = yield* TenantAuthenticator;
-    const tenant = yield* authenticator.authenticate(req.headers.get("authorization"));
-    const { envelope, rawBody } = yield* readEnvelope(req, config.maxEnvelopeBytes);
-    yield* Effect.sync(() =>
-      logger.debug("request.received", {
-        tenantId: tenant.id,
-        requestId: envelope.requestId,
-        keyId: envelope.keyId,
-        prompt: formatCiphertextPreview(envelope.ciphertext),
-        ciphertextCharacters: envelope.ciphertext.length,
-      }),
-    );
-
-    const requestTracker = yield* RequestTracker;
-    if (!(yield* requestTracker.claim(tenant.id, envelope.requestId))) {
-      return yield* new RelayReplayDetected();
-    }
-
-    const exitClient = yield* ExitClient;
-    const responseBody = yield* exitClient.forward(rawBody, req.signal);
-    yield* Effect.sync(() => {
-      const forwardedHeaders = new Headers({
-        authorization: `Bearer ${config.exitToken}`,
-        "content-type": "application/json",
-      });
-      hooks.observe?.({
-        tenantId: tenant.id,
-        requestId: envelope.requestId,
-        body: rawBody,
-        forwardedHeaders,
-      });
-    });
-
-    handedOff = true;
-    return new Response(
-      proxyBody(responseBody, permit, (chunk) => {
-        logger.debug("response.chunk.received", {
-          tenantId: tenant.id,
-          requestId: envelope.requestId,
-          encryptedBytes: chunk.byteLength,
-        });
-        hooks.observeResponseChunk?.(chunk);
-      }),
-      {
-        status: 200,
-        headers: {
-          "cache-control": "no-store",
-          "content-type": SEALED_STREAM_CONTENT_TYPE,
-        },
-      },
-    );
-  }).pipe(
-    Effect.ensuring(
-      Effect.sync(() => {
-        if (!handedOff) permit.release();
-      }),
-    ),
-  );
-});
-
-export type RelayServices =
-  | ConcurrencyLimiter
-  | TenantAuthenticator
-  | RequestTracker
-  | ExitClient;
-
-export function relayLive(config: RelayConfig): Layer.Layer<RelayServices> {
-  return Layer.mergeAll(
-    tenantAuthenticatorLayer(config.tenantTokens),
-    requestTrackerLayer({
-      ttlMs: config.requestTtlMs,
-      maxEntries: config.maxRequestEntries,
-      maxEntriesPerTenant: config.maxRequestEntriesPerTenant,
-    }),
-    concurrencyLimiterLayer(config.maxConcurrentRequests),
-    exitClientLayer({
-      url: config.exitUrl,
-      token: config.exitToken,
-      timeoutMs: config.exitTimeoutMs,
-    }),
-  );
-}
-
-export function createRelayServer(
-  config: RelayConfig = loadConfig(),
-  services: Layer.Layer<RelayServices> = relayLive(config),
-  hooks: RelayHooks = {},
-): Server<undefined> {
-  const logger = createDebugLogger("relay");
-  const runtime = ManagedRuntime.make(services);
-  const server = Bun.serve({
-    port: config.port,
-    hostname: config.hostname,
-    idleTimeout: 60,
-    fetch(req) {
-      const program = handleRelayRequest(req, config, logger, hooks).pipe(
-        Effect.catch((error) => Effect.succeed(relayErrorResponse(error))),
-        Effect.catchCause(recoverDefect("relay", relayDefectResponse)),
-      );
-      return runtime
-        .runPromise(program, { signal: req.signal })
-        .catch(relayDefectResponse);
-    },
-  });
-  return bindRuntimeLifecycle(server, runtime);
 }

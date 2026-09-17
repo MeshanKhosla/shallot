@@ -16,15 +16,6 @@ export interface ExitConfig {
   replayMaxEntries: number;
 }
 
-function positiveInteger(name: string, fallback: number): number {
-  const raw = process.env[name];
-  const value = raw === undefined ? fallback : Number(raw);
-  if (!Number.isSafeInteger(value) || value <= 0) {
-    throw new Error(`${name} must be a positive integer`);
-  }
-  return value;
-}
-
 export function loadConfig(): ExitConfig {
   const privateKey = process.env.EXIT_PRIVATE_KEY;
   const relayToken = process.env.EXIT_RELAY_TOKEN;
@@ -45,4 +36,13 @@ export function loadConfig(): ExitConfig {
     replayTtlMs: positiveInteger("EXIT_REPLAY_TTL_MS", 5 * 60_000),
     replayMaxEntries: positiveInteger("EXIT_REPLAY_MAX_ENTRIES", 100_000),
   };
+}
+
+function positiveInteger(name: string, fallback: number): number {
+  const raw = process.env[name];
+  const value = raw === undefined ? fallback : Number(raw);
+  if (!Number.isSafeInteger(value) || value <= 0) {
+    throw new Error(`${name} must be a positive integer`);
+  }
+  return value;
 }
