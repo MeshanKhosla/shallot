@@ -4,6 +4,59 @@ interface ChatRequest extends Record<string, unknown> {
   stream?: boolean;
 }
 
+export function createOpenAIResponse(
+  request: ChatRequest,
+  chunkDelayMs: number,
+): Response {
+  if (request.model === "mock-error") {
+    return Response.json(
+      { error: { message: "configured provider error", type: "mock_error" } },
+      { status: 429 },
+    );
+  }
+
+  if (
+    request.model === "mock-tool" &&
+    !request.messages.some((message) => message.role === "tool")
+  ) {
+    return completion(
+      request,
+      {
+        role: "assistant",
+        content: null,
+        tool_calls: [
+          {
+            id: "call_weather",
+            type: "function",
+            function: {
+              name: "weather",
+              arguments: '{"city":"Paris"}',
+            },
+          },
+        ],
+      },
+      "tool_calls",
+    );
+  }
+
+  if (request.stream === true) return streamingCompletion(request, chunkDelayMs);
+  return completion(request, {
+    role: "assistant",
+    content: finalTextFor(request),
+  });
+}
+
+export function parseChatRequest(value: unknown): ChatRequest {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("request must be an object");
+  }
+  const request = value as Partial<ChatRequest>;
+  if (typeof request.model !== "string" || !Array.isArray(request.messages)) {
+    throw new Error("model and messages are required");
+  }
+  return request as ChatRequest;
+}
+
 const CREATED = 1_700_000_000;
 
 function usage() {
@@ -82,57 +135,4 @@ function streamingCompletion(request: ChatRequest, delayMs: number): Response {
   return new Response(stream, {
     headers: { "content-type": "text/event-stream; charset=utf-8" },
   });
-}
-
-export function createOpenAIResponse(
-  request: ChatRequest,
-  chunkDelayMs: number,
-): Response {
-  if (request.model === "mock-error") {
-    return Response.json(
-      { error: { message: "configured provider error", type: "mock_error" } },
-      { status: 429 },
-    );
-  }
-
-  if (
-    request.model === "mock-tool" &&
-    !request.messages.some((message) => message.role === "tool")
-  ) {
-    return completion(
-      request,
-      {
-        role: "assistant",
-        content: null,
-        tool_calls: [
-          {
-            id: "call_weather",
-            type: "function",
-            function: {
-              name: "weather",
-              arguments: '{"city":"Paris"}',
-            },
-          },
-        ],
-      },
-      "tool_calls",
-    );
-  }
-
-  if (request.stream === true) return streamingCompletion(request, chunkDelayMs);
-  return completion(request, {
-    role: "assistant",
-    content: finalTextFor(request),
-  });
-}
-
-export function parseChatRequest(value: unknown): ChatRequest {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) {
-    throw new Error("request must be an object");
-  }
-  const request = value as Partial<ChatRequest>;
-  if (typeof request.model !== "string" || !Array.isArray(request.messages)) {
-    throw new Error("model and messages are required");
-  }
-  return request as ChatRequest;
 }

@@ -1,10 +1,6 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { ExitHttpError } from "./errors.ts";
 
-function digest(value: string): Buffer {
-  return createHash("sha256").update(value).digest();
-}
-
 export function requireRelayAuthorization(
   authorization: string | null,
   expectedToken: string,
@@ -17,4 +13,8 @@ export function requireRelayAuthorization(
   if (!matches) {
     throw new ExitHttpError(401, "Relay authentication failed", "authentication_error");
   }
+}
+
+function digest(value: string): Buffer {
+  return createHash("sha256").update(value).digest();
 }

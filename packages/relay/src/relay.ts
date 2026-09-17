@@ -13,71 +13,6 @@ import { RelayHttpError, relayErrorResponse } from "./errors.ts";
 import { forwardToExit } from "./exit-client.ts";
 import { RequestTrackerCapacityError } from "./request-tracker.ts";
 
-async function readEnvelope(
-  req: Request,
-  maxBytes: number,
-): Promise<{ envelope: SealedRequest; rawBody: string }> {
-  let body: Uint8Array;
-  try {
-    body = await readLimitedBody(req, maxBytes);
-  } catch (error) {
-    if (error instanceof BodyTooLargeError) {
-      throw new RelayHttpError(
-        413,
-        "Encrypted request is too large",
-        "request_too_large",
-      );
-    }
-    throw error;
-  }
-
-  const rawBody = new TextDecoder().decode(body);
-  try {
-    return {
-      envelope: parseSealedRequest(JSON.parse(rawBody)),
-      rawBody,
-    };
-  } catch {
-    throw new RelayHttpError(400, "Invalid encrypted request", "invalid_request_error");
-  }
-}
-
-function proxyBody(
-  body: ReadableStream<Uint8Array>,
-  release: () => void,
-  observe?: (chunk: Uint8Array) => void,
-): ReadableStream<Uint8Array> {
-  const reader = body.getReader();
-  let released = false;
-  const releaseOnce = () => {
-    if (released) return;
-    released = true;
-    release();
-  };
-
-  return new ReadableStream({
-    async pull(controller) {
-      try {
-        const result = await reader.read();
-        if (result.done) {
-          releaseOnce();
-          controller.close();
-        } else {
-          observe?.(result.value);
-          controller.enqueue(result.value);
-        }
-      } catch (error) {
-        releaseOnce();
-        controller.error(error);
-      }
-    },
-    async cancel(reason) {
-      releaseOnce();
-      await reader.cancel(reason);
-    },
-  });
-}
-
 export function createRelayServer(config: RelayConfig = loadConfig()): Server<undefined> {
   let activeRequests = 0;
   const logger = createDebugLogger("relay");
@@ -145,6 +80,7 @@ export function createRelayServer(config: RelayConfig = loadConfig()): Server<un
           forwardedHeaders,
         });
 
+        // The request handler owns the permit until the response body takes over.
         handedOff = true;
         return new Response(
           proxyBody(responseBody, release, (chunk) => {
@@ -168,6 +104,71 @@ export function createRelayServer(config: RelayConfig = loadConfig()): Server<un
       } finally {
         if (!handedOff) release();
       }
+    },
+  });
+}
+
+async function readEnvelope(
+  req: Request,
+  maxBytes: number,
+): Promise<{ envelope: SealedRequest; rawBody: string }> {
+  let body: Uint8Array;
+  try {
+    body = await readLimitedBody(req, maxBytes);
+  } catch (error) {
+    if (error instanceof BodyTooLargeError) {
+      throw new RelayHttpError(
+        413,
+        "Encrypted request is too large",
+        "request_too_large",
+      );
+    }
+    throw error;
+  }
+
+  const rawBody = new TextDecoder().decode(body);
+  try {
+    return {
+      envelope: parseSealedRequest(JSON.parse(rawBody)),
+      rawBody,
+    };
+  } catch {
+    throw new RelayHttpError(400, "Invalid encrypted request", "invalid_request_error");
+  }
+}
+
+function proxyBody(
+  body: ReadableStream<Uint8Array>,
+  release: () => void,
+  observe?: (chunk: Uint8Array) => void,
+): ReadableStream<Uint8Array> {
+  const reader = body.getReader();
+  let released = false;
+  const releaseOnce = () => {
+    if (released) return;
+    released = true;
+    release();
+  };
+
+  return new ReadableStream({
+    async pull(controller) {
+      try {
+        const result = await reader.read();
+        if (result.done) {
+          releaseOnce();
+          controller.close();
+        } else {
+          observe?.(result.value);
+          controller.enqueue(result.value);
+        }
+      } catch (error) {
+        releaseOnce();
+        controller.error(error);
+      }
+    },
+    async cancel(reason) {
+      releaseOnce();
+      await reader.cancel(reason);
     },
   });
 }

@@ -16,37 +16,6 @@ import { sealProviderResponse } from "./response-sealer.ts";
 import { sanitizeChatRequest } from "./sanitize-request.ts";
 import { requireRelayAuthorization } from "./service-auth.ts";
 
-async function readEnvelope(req: Request, maxBytes: number): Promise<SealedRequest> {
-  let body: Uint8Array;
-  try {
-    body = await readLimitedBody(req, maxBytes);
-  } catch (error) {
-    if (error instanceof BodyTooLargeError) {
-      throw new ExitHttpError(413, "Encrypted request is too large", "request_too_large");
-    }
-    throw error;
-  }
-
-  try {
-    return parseSealedRequest(JSON.parse(new TextDecoder().decode(body)));
-  } catch {
-    throw new ExitHttpError(400, "Invalid encrypted request", "invalid_request_error");
-  }
-}
-
-function encryptedError(error: unknown): Response {
-  if (error instanceof ExitHttpError) {
-    return Response.json(
-      { error: { message: error.message, type: error.type } },
-      { status: error.status },
-    );
-  }
-  return Response.json(
-    { error: { message: "Exit could not process the request", type: "exit_error" } },
-    { status: 500 },
-  );
-}
-
 export function createExitServer(config: ExitConfig): Server<undefined> {
   const logger = createDebugLogger("exit");
 
@@ -141,4 +110,35 @@ export function createExitServer(config: ExitConfig): Server<undefined> {
       }
     },
   });
+}
+
+async function readEnvelope(req: Request, maxBytes: number): Promise<SealedRequest> {
+  let body: Uint8Array;
+  try {
+    body = await readLimitedBody(req, maxBytes);
+  } catch (error) {
+    if (error instanceof BodyTooLargeError) {
+      throw new ExitHttpError(413, "Encrypted request is too large", "request_too_large");
+    }
+    throw error;
+  }
+
+  try {
+    return parseSealedRequest(JSON.parse(new TextDecoder().decode(body)));
+  } catch {
+    throw new ExitHttpError(400, "Invalid encrypted request", "invalid_request_error");
+  }
+}
+
+function encryptedError(error: unknown): Response {
+  if (error instanceof ExitHttpError) {
+    return Response.json(
+      { error: { message: error.message, type: error.type } },
+      { status: error.status },
+    );
+  }
+  return Response.json(
+    { error: { message: "Exit could not process the request", type: "exit_error" } },
+    { status: 500 },
+  );
 }

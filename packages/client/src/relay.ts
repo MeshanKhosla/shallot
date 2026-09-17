@@ -2,17 +2,6 @@ import { SEALED_STREAM_CONTENT_TYPE, type SealedRequest } from "@shallot/protoco
 import type { SidecarConfig } from "./config.ts";
 import { SidecarHttpError } from "./errors.ts";
 
-function relayHeaders(req: Request): Headers {
-  const headers = new Headers({
-    accept: SEALED_STREAM_CONTENT_TYPE,
-    "content-type": "application/json",
-  });
-  const authorization = req.headers.get("authorization");
-
-  if (authorization) headers.set("authorization", authorization);
-  return headers;
-}
-
 export async function forwardToRelay(
   req: Request,
   envelope: SealedRequest,
@@ -47,4 +36,15 @@ export async function forwardToRelay(
   }
 
   return response.body;
+}
+
+function relayHeaders(req: Request): Headers {
+  const headers = new Headers({
+    accept: SEALED_STREAM_CONTENT_TYPE,
+    "content-type": "application/json",
+  });
+  const authorization = req.headers.get("authorization");
+
+  if (authorization) headers.set("authorization", authorization);
+  return headers;
 }

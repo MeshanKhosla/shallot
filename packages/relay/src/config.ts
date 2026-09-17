@@ -23,6 +23,31 @@ export interface RelayConfig {
   observeResponseChunk?: (chunk: Uint8Array) => void;
 }
 
+export function loadConfig(): RelayConfig {
+  const exitToken = process.env.RELAY_EXIT_TOKEN;
+  if (!exitToken) throw new Error("RELAY_EXIT_TOKEN is required");
+
+  return {
+    hostname: process.env.RELAY_HOSTNAME ?? "127.0.0.1",
+    port: positiveInteger("RELAY_PORT", 8787),
+    exitUrl: new URL(
+      process.env.RELAY_EXIT_URL ?? "http://127.0.0.1:8786/v1/chat/completions",
+    ),
+    exitToken,
+    authenticator: new StaticTenantAuthenticator(tenantTokensFromEnvironment()),
+    requestTracker: new MemoryRequestTracker(
+      positiveInteger("RELAY_REQUEST_TTL_MS", 5 * 60_000),
+      Date.now,
+      positiveInteger("RELAY_REQUEST_MAX_ENTRIES", 100_000),
+      positiveInteger("RELAY_REQUEST_MAX_ENTRIES_PER_TENANT", 10_000),
+    ),
+    maxEnvelopeBytes: positiveInteger("RELAY_MAX_ENVELOPE_BYTES", 3 * 1024 * 1024),
+    maxConcurrentRequests: positiveInteger("RELAY_MAX_CONCURRENT_REQUESTS", 100),
+    exitTimeoutMs: positiveInteger("RELAY_EXIT_TIMEOUT_MS", 65_000),
+    fetch,
+  };
+}
+
 function positiveInteger(name: string, fallback: number): number {
   const raw = process.env[name];
   const value = raw === undefined ? fallback : Number(raw);
@@ -47,29 +72,4 @@ function tenantTokensFromEnvironment(): Map<string, string> {
     tokens.set(entry.slice(0, separator), entry.slice(separator + 1));
   }
   return tokens;
-}
-
-export function loadConfig(): RelayConfig {
-  const exitToken = process.env.RELAY_EXIT_TOKEN;
-  if (!exitToken) throw new Error("RELAY_EXIT_TOKEN is required");
-
-  return {
-    hostname: process.env.RELAY_HOSTNAME ?? "127.0.0.1",
-    port: positiveInteger("RELAY_PORT", 8787),
-    exitUrl: new URL(
-      process.env.RELAY_EXIT_URL ?? "http://127.0.0.1:8786/v1/chat/completions",
-    ),
-    exitToken,
-    authenticator: new StaticTenantAuthenticator(tenantTokensFromEnvironment()),
-    requestTracker: new MemoryRequestTracker(
-      positiveInteger("RELAY_REQUEST_TTL_MS", 5 * 60_000),
-      Date.now,
-      positiveInteger("RELAY_REQUEST_MAX_ENTRIES", 100_000),
-      positiveInteger("RELAY_REQUEST_MAX_ENTRIES_PER_TENANT", 10_000),
-    ),
-    maxEnvelopeBytes: positiveInteger("RELAY_MAX_ENVELOPE_BYTES", 3 * 1024 * 1024),
-    maxConcurrentRequests: positiveInteger("RELAY_MAX_CONCURRENT_REQUESTS", 100),
-    exitTimeoutMs: positiveInteger("RELAY_EXIT_TIMEOUT_MS", 65_000),
-    fetch,
-  };
 }
