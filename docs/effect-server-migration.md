@@ -36,6 +36,23 @@ requests. The Bun `fetch` callback runs one request Effect with the incoming
 request signal. Server shutdown disposes the runtime so its fibers and scoped
 resources are interrupted before the Bun server finishes stopping.
 
+```text
+Bun HTTP adapter
+  -> Effect request program
+       -> services supplied by Layers
+       -> typed failures before HTTP headers
+  -> Web Stream response
+       -> explicit cancellation, backpressure, and cleanup
+```
+
+Effect owns request processing until the handler produces a `Response`. Web
+Streams own the response body after that point. Once Bun sends the response
+headers, a stream failure cannot return through the request Effect's typed error
+channel or replace the HTTP status. The stream instead errors its reader and
+runs its explicit cancellation and cleanup paths. This is normal HTTP streaming
+behavior, and keeping that boundary visible makes resource ownership easier to
+audit.
+
 Request programs return Fetch `Response` values. Expected failures stay in the
 typed error channel until one HTTP translation function converts them to the
 existing status, public message, and OpenAI-compatible error type. A defect is
@@ -77,9 +94,9 @@ combine that signal with the client signal and an injected timeout signal. The
 timeout stays attached after response headers arrive, which preserves the
 existing limit across streamed response bodies. Tests control the timeout with
 an injected `AbortController`. Stream adapters stay pull-based to preserve Web
-Stream backpressure. Their readers use explicit finalizers so success, failure,
-and downstream cancellation release locks, cancel unfinished upstream bodies,
-and return Relay concurrency permits exactly once.
+Stream backpressure. Web Stream code owns its readers and finalizers. Success,
+failure, and downstream cancellation release locks, cancel unfinished upstream
+bodies, and return Relay concurrency permits exactly once.
 
 ## Logging
 
