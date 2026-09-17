@@ -25,7 +25,8 @@ bun run test:e2e
 
 ## Run the local stack
 
-Start all four services with local development credentials and readable debug logs:
+Start all four services with local development credentials and readable debug
+logs. Each line has a color-coded service prefix:
 
 ```sh
 bun run dev:local

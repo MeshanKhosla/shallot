@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { type ConcurrentlyCommandInput, concurrently } from "concurrently";
 import { generateExitKeyFiles } from "./generate-exit-key.ts";
 
 export interface LocalStackKeys {
@@ -24,14 +25,33 @@ const INSPECTOR_ENDPOINTS: Record<LocalService["name"], string> = {
   sidecar: "127.0.0.1:6502/sidecar",
 };
 
+const SERVICE_COLORS: Record<LocalService["name"], string> = {
+  provider: "blue",
+  exit: "magenta",
+  relay: "yellow",
+  sidecar: "cyan",
+};
+
 export function createLocalServiceCommand(
   service: LocalService,
   inspect = false,
-): string[] {
+): string {
   const inspectArgument = inspect
-    ? [`--inspect=${INSPECTOR_ENDPOINTS[service.name]}`]
-    : [];
-  return [process.execPath, ...inspectArgument, service.entrypoint];
+    ? ` --inspect=${INSPECTOR_ENDPOINTS[service.name]}`
+    : "";
+  return `bun${inspectArgument} ${service.entrypoint}`;
+}
+
+export function createConcurrentCommands(
+  services: LocalService[],
+  inspect = false,
+): ConcurrentlyCommandInput[] {
+  return services.map((service) => ({
+    command: createLocalServiceCommand(service, inspect),
+    name: service.name,
+    prefixColor: SERVICE_COLORS[service.name],
+    env: service.environment,
+  }));
 }
 
 function readKeys(rootDirectory: string): LocalStackKeys {
@@ -55,7 +75,6 @@ function readKeys(rootDirectory: string): LocalStackKeys {
 }
 
 export function createLocalServices(
-  rootDirectory: string,
   keys: LocalStackKeys,
   environment: NodeJS.ProcessEnv = process.env,
 ): LocalService[] {
@@ -76,7 +95,7 @@ export function createLocalServices(
   return [
     {
       name: "provider",
-      entrypoint: resolve(rootDirectory, "packages/mock-provider/src/main.ts"),
+      entrypoint: "packages/mock-provider/src/main.ts",
       environment: {
         ...common,
         MOCK_PROVIDER_API_KEY: providerToken,
@@ -84,7 +103,7 @@ export function createLocalServices(
     },
     {
       name: "exit",
-      entrypoint: resolve(rootDirectory, "packages/exit/src/main.ts"),
+      entrypoint: "packages/exit/src/main.ts",
       environment: {
         ...common,
         EXIT_PRIVATE_KEY: keys.privateKey,
@@ -97,7 +116,7 @@ export function createLocalServices(
     },
     {
       name: "relay",
-      entrypoint: resolve(rootDirectory, "packages/relay/src/main.ts"),
+      entrypoint: "packages/relay/src/main.ts",
       environment: {
         ...common,
         RELAY_TENANT_TOKENS: environment.RELAY_TENANT_TOKENS ?? "demo:tenant-local",
@@ -109,7 +128,7 @@ export function createLocalServices(
     },
     {
       name: "sidecar",
-      entrypoint: resolve(rootDirectory, "packages/client/src/main.ts"),
+      entrypoint: "packages/client/src/main.ts",
       environment: {
         ...common,
         SIDECAR_EXIT_PUBLIC_KEY: keys.publicKey,
@@ -121,60 +140,25 @@ export function createLocalServices(
   ];
 }
 
-async function stopChildren(children: Bun.Subprocess[]): Promise<void> {
-  for (const child of children) {
-    if (child.exitCode === null) child.kill("SIGTERM");
-  }
-  await Promise.all(children.map((child) => child.exited));
-}
-
 export async function runLocalStack(
   rootDirectory: string,
   options: LocalStackOptions = {},
 ): Promise<number> {
-  const services = createLocalServices(rootDirectory, readKeys(rootDirectory));
-  const children = services.map((service) => {
-    console.log(`[local-stack] starting ${service.name}`);
-    return Bun.spawn(createLocalServiceCommand(service, options.inspect), {
-      cwd: rootDirectory,
-      env: service.environment,
-      stdin: "ignore",
-      stdout: "inherit",
-      stderr: "inherit",
-    });
+  const services = createLocalServices(readKeys(rootDirectory));
+  const { result } = concurrently(createConcurrentCommands(services, options.inspect), {
+    cwd: rootDirectory,
+    prefix: "[{color}{name}{/color}]",
+    padPrefix: true,
+    killOthersOn: "failure",
+    killSignal: "SIGTERM",
+    killTimeout: 3_000,
   });
-
-  let resolveSignal: (signal: NodeJS.Signals) => void = () => undefined;
-  const signalReceived = new Promise<NodeJS.Signals>((resolveSignalPromise) => {
-    resolveSignal = resolveSignalPromise;
-  });
-  const onInterrupt = () => resolveSignal("SIGINT");
-  const onTerminate = () => resolveSignal("SIGTERM");
-  process.once("SIGINT", onInterrupt);
-  process.once("SIGTERM", onTerminate);
 
   try {
-    const result = await Promise.race([
-      signalReceived.then((signal) => ({ type: "signal" as const, signal })),
-      ...children.map((child, index) =>
-        child.exited.then((exitCode) => ({
-          type: "exit" as const,
-          exitCode,
-          service: services[index]?.name ?? "unknown",
-        })),
-      ),
-    ]);
-
-    if (result.type === "exit") {
-      console.error(
-        `[local-stack] ${result.service} exited with code ${result.exitCode}`,
-      );
-    }
-    await stopChildren(children);
-    return result.type === "signal" ? 0 : result.exitCode || 1;
-  } finally {
-    process.off("SIGINT", onInterrupt);
-    process.off("SIGTERM", onTerminate);
+    await result;
+    return 0;
+  } catch {
+    return 1;
   }
 }
 

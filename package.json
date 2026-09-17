@@ -24,6 +24,7 @@
   "devDependencies": {
     "@biomejs/biome": "^2.5.13",
     "@types/bun": "latest",
+    "concurrently": "^10.0.5",
     "typescript": "latest"
   }
 }

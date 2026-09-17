@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { createLocalServiceCommand, createLocalServices } from "./local-stack.ts";
+import {
+  createConcurrentCommands,
+  createLocalServiceCommand,
+  createLocalServices,
+} from "./local-stack.ts";
 
 const KEYS = {
   privateKey: "private-key",
@@ -8,7 +12,7 @@ const KEYS = {
 
 describe("local stack", () => {
   test("connects the four services using local defaults", () => {
-    const services = createLocalServices("/repo", KEYS, {});
+    const services = createLocalServices(KEYS, {});
     const byName = Object.fromEntries(
       services.map((service) => [service.name, service.environment]),
     );
@@ -30,7 +34,7 @@ describe("local stack", () => {
   });
 
   test("derives service URLs from overridden ports", () => {
-    const services = createLocalServices("/repo", KEYS, {
+    const services = createLocalServices(KEYS, {
       MOCK_PROVIDER_PORT: "18885",
       EXIT_PORT: "18886",
       RELAY_PORT: "18887",
@@ -52,29 +56,24 @@ describe("local stack", () => {
   });
 
   test("assigns a stable inspector endpoint to each service", () => {
-    const services = createLocalServices("/repo", KEYS, {});
+    const services = createLocalServices(KEYS, {});
 
     expect(services.map((service) => createLocalServiceCommand(service, true))).toEqual([
-      [
-        process.execPath,
-        "--inspect=127.0.0.1:6499/provider",
-        "/repo/packages/mock-provider/src/main.ts",
-      ],
-      [
-        process.execPath,
-        "--inspect=127.0.0.1:6500/exit",
-        "/repo/packages/exit/src/main.ts",
-      ],
-      [
-        process.execPath,
-        "--inspect=127.0.0.1:6501/relay",
-        "/repo/packages/relay/src/main.ts",
-      ],
-      [
-        process.execPath,
-        "--inspect=127.0.0.1:6502/sidecar",
-        "/repo/packages/client/src/main.ts",
-      ],
+      "bun --inspect=127.0.0.1:6499/provider packages/mock-provider/src/main.ts",
+      "bun --inspect=127.0.0.1:6500/exit packages/exit/src/main.ts",
+      "bun --inspect=127.0.0.1:6501/relay packages/relay/src/main.ts",
+      "bun --inspect=127.0.0.1:6502/sidecar packages/client/src/main.ts",
+    ]);
+  });
+
+  test("gives each process a named color prefix", () => {
+    const services = createLocalServices(KEYS, {});
+
+    expect(createConcurrentCommands(services)).toEqual([
+      expect.objectContaining({ name: "provider", prefixColor: "blue" }),
+      expect.objectContaining({ name: "exit", prefixColor: "magenta" }),
+      expect.objectContaining({ name: "relay", prefixColor: "yellow" }),
+      expect.objectContaining({ name: "sidecar", prefixColor: "cyan" }),
     ]);
   });
 });
