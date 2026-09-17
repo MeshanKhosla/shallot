@@ -1,7 +1,7 @@
 import { createDebugLogger, formatCiphertextPreview } from "@shallot/observability";
 import { PATHS, sealRequest } from "@shallot/protocol";
 import type { Server } from "bun";
-import { Effect, ManagedRuntime } from "effect";
+import { Effect, type Layer, ManagedRuntime } from "effect";
 import { readChatRequest } from "./chat-request.ts";
 import { loadConfig, type SidecarConfig } from "./config.ts";
 import {
@@ -114,11 +114,19 @@ function stopWithRuntime(
   };
 }
 
+export function sidecarLive(config: SidecarConfig): Layer.Layer<RelayClient> {
+  return relayClientLayer({
+    url: config.relayUrl,
+    timeoutMs: config.relayTimeoutMs,
+  });
+}
+
 export function createSidecarServer(
   config: SidecarConfig = loadConfig(),
+  services: Layer.Layer<RelayClient> = sidecarLive(config),
 ): Server<undefined> {
   const logger = createDebugLogger("sidecar");
-  const runtime = ManagedRuntime.make(relayClientLayer(config));
+  const runtime = ManagedRuntime.make(services);
   const server = Bun.serve({
     port: config.port,
     hostname: config.hostname,

@@ -24,10 +24,14 @@ Mock provider runtime
   Mock provider request handler
 ```
 
-Configuration stays as immutable constructor input. Layers turn configured
-implementations into replaceable services once per server. Pure validation,
-sanitization, authentication comparisons, and response transformations remain
-plain functions unless they need injected state or cancellation.
+Server configuration contains data such as addresses, credentials, limits, and
+cache policy. It does not contain live service implementations. Each server has
+one production Layer constructor, and tests replace that Layer when they need a
+fake provider, transport, cache, clock, authenticator, or tracker. Pure
+validation, sanitization, authentication comparisons, and response
+transformations remain plain functions unless they need injected state or
+cancellation. Mock provider response functions stay plain because they have no
+service dependencies.
 
 ## Runtime boundary
 

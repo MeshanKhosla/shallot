@@ -23,6 +23,8 @@ import {
   exitErrorResponse,
 } from "./errors.ts";
 import { LlmProvider } from "./llm-provider.ts";
+import { openAICompatibleProviderLayer } from "./openai-compatible-provider.ts";
+import { MemoryReplayCache } from "./replay-cache.ts";
 import { ReplayProtection, replayProtectionLayer } from "./replay-protection.ts";
 import { sealProviderResponse } from "./response-sealer.ts";
 import { sanitizeChatRequest } from "./sanitize-request.ts";
@@ -165,13 +167,27 @@ function stopWithRuntime(
   };
 }
 
-export function createExitServer(config: ExitConfig): Server<undefined> {
-  const logger = createDebugLogger("exit");
-  const layer = Layer.mergeAll(
-    Layer.succeed(LlmProvider, config.llm.provider),
-    replayProtectionLayer(config.replayCache),
+export type ExitServices = LlmProvider | ReplayProtection;
+
+export function exitLive(config: ExitConfig): Layer.Layer<ExitServices> {
+  return Layer.mergeAll(
+    openAICompatibleProviderLayer({
+      url: config.llm.url,
+      apiKey: config.llm.apiKey,
+      timeoutMs: config.llm.timeoutMs,
+    }),
+    replayProtectionLayer(
+      new MemoryReplayCache(config.replayTtlMs, Date.now, config.replayMaxEntries),
+    ),
   );
-  const runtime = ManagedRuntime.make(layer);
+}
+
+export function createExitServer(
+  config: ExitConfig,
+  services: Layer.Layer<ExitServices> = exitLive(config),
+): Server<undefined> {
+  const logger = createDebugLogger("exit");
+  const runtime = ManagedRuntime.make(services);
   const server = Bun.serve({
     port: config.port,
     hostname: config.hostname,

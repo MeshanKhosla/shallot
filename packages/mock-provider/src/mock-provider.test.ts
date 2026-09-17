@@ -11,14 +11,18 @@ afterEach(async () => {
 
 describe("Mock provider Effect runtime", () => {
   test("converts an observation defect without leaking it", async () => {
-    const server = createMockProviderServer({
-      hostname: "127.0.0.1",
-      port: 0,
-      chunkDelayMs: 0,
-      observe() {
-        throw new Error("provider-key-canary");
+    const server = createMockProviderServer(
+      {
+        hostname: "127.0.0.1",
+        port: 0,
+        chunkDelayMs: 0,
       },
-    });
+      {
+        observe() {
+          throw new Error("provider-key-canary");
+        },
+      },
+    );
     servers.push(server);
 
     const response = await fetch(`http://127.0.0.1:${server.port}/v1/chat/completions`, {

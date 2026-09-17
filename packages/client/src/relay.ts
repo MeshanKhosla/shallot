@@ -1,6 +1,5 @@
 import { SEALED_STREAM_CONTENT_TYPE, type SealedRequest } from "@shallot/protocol";
 import { Context, Effect, Layer } from "effect";
-import type { SidecarConfig } from "./config.ts";
 import {
   RelayEmptyResponse,
   RelayRejected,
@@ -25,6 +24,21 @@ export type RelayClientError =
   | RelayRejected
   | RelayEmptyResponse;
 
+export type SidecarFetch = (
+  input: string | URL | Request,
+  init?: RequestInit,
+) => Promise<Response>;
+
+export interface RelayClientConfig {
+  readonly url: URL;
+  readonly timeoutMs: number;
+}
+
+export interface RelayClientDependencies {
+  readonly fetch?: SidecarFetch;
+  readonly timeoutSignal?: (timeoutMs: number) => AbortSignal;
+}
+
 export class RelayClient extends Context.Service<
   RelayClient,
   {
@@ -35,17 +49,20 @@ export class RelayClient extends Context.Service<
   }
 >()("@shallot/client/RelayClient") {}
 
-export function relayClientLayer(config: SidecarConfig): Layer.Layer<RelayClient> {
-  const relayFetch = config.fetch ?? fetch;
-  const timeoutSignal = config.relayTimeoutSignal ?? AbortSignal.timeout;
+export function relayClientLayer(
+  config: RelayClientConfig,
+  dependencies: RelayClientDependencies = {},
+): Layer.Layer<RelayClient> {
+  const relayFetch = dependencies.fetch ?? fetch;
+  const timeoutSignal = dependencies.timeoutSignal ?? AbortSignal.timeout;
 
   return Layer.succeed(RelayClient, {
     forward: (request, envelope) =>
       Effect.gen(function* () {
-        const timeout = timeoutSignal(config.relayTimeoutMs);
+        const timeout = timeoutSignal(config.timeoutMs);
         const response = yield* Effect.tryPromise({
           try: (effectSignal) =>
-            relayFetch(config.relayUrl, {
+            relayFetch(config.url, {
               method: "POST",
               headers: relayHeaders(request),
               body: JSON.stringify(envelope),

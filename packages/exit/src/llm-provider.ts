@@ -15,7 +15,9 @@ export class LlmProvider extends Context.Service<
 export type LlmProviderService = LlmProvider["Service"];
 
 export interface LlmConfig {
-  provider: LlmProviderService;
+  url: URL;
+  apiKey?: string;
+  timeoutMs: number;
   allowedModels?: ReadonlySet<string>;
   maxResponseBytes: number;
 }

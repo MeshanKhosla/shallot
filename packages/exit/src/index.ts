@@ -1,5 +1,5 @@
 export { type ExitConfig, loadConfig } from "./config.ts";
-export { createExitServer } from "./exit.ts";
+export { createExitServer, exitLive, type ExitServices } from "./exit.ts";
 export { loadLlmConfig } from "./llm-config.ts";
 export {
   type LlmConfig,
@@ -9,6 +9,8 @@ export {
 export {
   OpenAICompatibleProvider,
   type OpenAICompatibleProviderConfig,
+  type OpenAICompatibleProviderDependencies,
+  openAICompatibleProviderLayer,
 } from "./openai-compatible-provider.ts";
 export {
   MemoryReplayCache,

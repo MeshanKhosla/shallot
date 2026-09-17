@@ -2,21 +2,12 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { generateKeyPairSync } from "node:crypto";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { createSidecarServer } from "@shallot/client";
-import {
-  createExitServer,
-  MemoryReplayCache,
-  OpenAICompatibleProvider,
-} from "@shallot/exit";
+import { createExitServer } from "@shallot/exit";
 import {
   createMockProviderServer,
   type ProviderObservation,
 } from "@shallot/mock-provider";
-import {
-  createRelayServer,
-  MemoryRequestTracker,
-  type RelayObservation,
-  StaticTenantAuthenticator,
-} from "@shallot/relay";
+import { createRelayServer, type RelayObservation } from "@shallot/relay";
 import { generateText, Output, stepCountIs, streamText, tool } from "ai";
 import { z } from "zod";
 
@@ -56,17 +47,21 @@ function setupGateway(options: { providerChunkDelayMs?: number } = {}) {
   });
   const exitKeys = generateKeyPairSync("x25519");
 
-  const provider = createMockProviderServer({
-    hostname: "127.0.0.1",
-    port: 0,
-    expectedApiKey: PROVIDER_TOKEN,
-    chunkDelayMs: options.providerChunkDelayMs ?? 1,
-    observe: (observation) => {
-      providerObservations.push(observation);
-      resolveProviderRequest?.();
+  const provider = createMockProviderServer(
+    {
+      hostname: "127.0.0.1",
+      port: 0,
+      expectedApiKey: PROVIDER_TOKEN,
+      chunkDelayMs: options.providerChunkDelayMs ?? 1,
     },
-    observeCancellation: () => resolveProviderCancellation?.(),
-  });
+    {
+      observe: (observation) => {
+        providerObservations.push(observation);
+        resolveProviderRequest?.();
+      },
+      observeCancellation: () => resolveProviderCancellation?.(),
+    },
+  );
   servers.push(provider);
 
   const exit = createExitServer({
@@ -75,12 +70,9 @@ function setupGateway(options: { providerChunkDelayMs?: number } = {}) {
     relayToken: EXIT_TOKEN,
     privateKeys: new Map([["test-key", exitKeys.privateKey]]),
     llm: {
-      provider: new OpenAICompatibleProvider({
-        url: new URL(`http://127.0.0.1:${provider.port}/v1/chat/completions`),
-        apiKey: PROVIDER_TOKEN,
-        timeoutMs: 5_000,
-        fetch,
-      }),
+      url: new URL(`http://127.0.0.1:${provider.port}/v1/chat/completions`),
+      apiKey: PROVIDER_TOKEN,
+      timeoutMs: 5_000,
       allowedModels: new Set([
         "mock-text",
         "mock-stream",
@@ -93,21 +85,25 @@ function setupGateway(options: { providerChunkDelayMs?: number } = {}) {
     maxEnvelopeBytes: 256 * 1024,
     responsePaddingBytes: 512,
     responseFlushMs: 1,
-    replayCache: new MemoryReplayCache(60_000),
+    replayTtlMs: 60_000,
+    replayMaxEntries: 10_000,
   });
   servers.push(exit);
 
-  const relay = createRelayServer({
+  const relayConfig = {
     hostname: "127.0.0.1",
     port: 0,
     exitUrl: new URL(`http://127.0.0.1:${exit.port}/v1/chat/completions`),
     exitToken: EXIT_TOKEN,
-    authenticator: new StaticTenantAuthenticator(new Map([["tenant-one", TENANT_TOKEN]])),
-    requestTracker: new MemoryRequestTracker(60_000),
+    tenantTokens: new Map([["tenant-one", TENANT_TOKEN]]),
+    requestTtlMs: 60_000,
+    maxRequestEntries: 10_000,
+    maxRequestEntriesPerTenant: 1_000,
     maxEnvelopeBytes: 256 * 1024,
     maxConcurrentRequests: 10,
     exitTimeoutMs: 1_000,
-    fetch,
+  };
+  const relay = createRelayServer(relayConfig, undefined, {
     observe: (observation) => relayObservations.push(observation),
     observeResponseChunk: (chunk) => relayResponseChunks.push(chunk.slice()),
   });

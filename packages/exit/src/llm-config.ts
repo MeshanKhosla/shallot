@@ -1,5 +1,4 @@
 import type { LlmConfig } from "./llm-provider.ts";
-import { OpenAICompatibleProvider } from "./openai-compatible-provider.ts";
 
 function positiveInteger(name: string, fallback: number): number {
   const raw = process.env[name];
@@ -19,11 +18,9 @@ export function loadLlmConfig(): LlmConfig {
     .filter(Boolean);
 
   return {
-    provider: new OpenAICompatibleProvider({
-      url: new URL(providerUrl),
-      apiKey: process.env.LLM_PROVIDER_API_KEY,
-      timeoutMs: positiveInteger("LLM_PROVIDER_TIMEOUT_MS", 60_000),
-    }),
+    url: new URL(providerUrl),
+    apiKey: process.env.LLM_PROVIDER_API_KEY,
+    timeoutMs: positiveInteger("LLM_PROVIDER_TIMEOUT_MS", 60_000),
     allowedModels: allowedModels ? new Set(allowedModels) : undefined,
     maxResponseBytes: positiveInteger("LLM_MAX_RESPONSE_BYTES", 16 * 1024 * 1024),
   };

@@ -1,5 +1,5 @@
 import { createHash, timingSafeEqual } from "node:crypto";
-import { Context, Effect } from "effect";
+import { Context, Effect, Layer } from "effect";
 import { RelayAuthenticationError } from "./errors.ts";
 
 export interface TenantIdentity {
@@ -59,4 +59,10 @@ export class StaticTenantAuthenticator implements TenantAuthenticatorService {
         : Effect.fail(new RelayAuthenticationError());
     });
   }
+}
+
+export function tenantAuthenticatorLayer(
+  tokens: ReadonlyMap<string, string>,
+): Layer.Layer<TenantAuthenticator> {
+  return Layer.succeed(TenantAuthenticator, new StaticTenantAuthenticator(tokens));
 }

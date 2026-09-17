@@ -1,30 +1,27 @@
 import { describe, expect, test } from "bun:test";
 import { Effect } from "effect";
-import type { RelayConfig, RelayFetch } from "./config.ts";
-import { ExitClient, exitClientLayer } from "./exit-client.ts";
-import { MemoryRequestTracker } from "./request-tracker.ts";
-import { StaticTenantAuthenticator } from "./tenant-auth.ts";
+import {
+  ExitClient,
+  type ExitClientDependencies,
+  exitClientLayer,
+  type RelayFetch,
+} from "./exit-client.ts";
 
-function config(fetch: RelayFetch): RelayConfig {
-  return {
-    hostname: "127.0.0.1",
-    port: 0,
-    exitUrl: new URL("https://exit.example/v1/chat/completions"),
-    exitToken: "exit-token",
-    authenticator: new StaticTenantAuthenticator(new Map([["tenant", "token"]])),
-    requestTracker: new MemoryRequestTracker(60_000),
-    maxEnvelopeBytes: 1024,
-    maxConcurrentRequests: 1,
-    exitTimeoutMs: 1_000,
-    fetch,
-  };
+function dependencies(fetch: RelayFetch): ExitClientDependencies {
+  return { fetch };
 }
 
-function forward(configured: RelayConfig) {
+const config = {
+  url: new URL("https://exit.example/v1/chat/completions"),
+  token: "exit-token",
+  timeoutMs: 1_000,
+};
+
+function forward(dependencies: ExitClientDependencies) {
   return Effect.gen(function* () {
     const client = yield* ExitClient;
     return yield* client.forward("{}", new AbortController().signal);
-  }).pipe(Effect.provide(exitClientLayer(configured)));
+  }).pipe(Effect.provide(exitClientLayer(config, dependencies)));
 }
 
 describe("Relay Exit client", () => {
@@ -34,7 +31,7 @@ describe("Relay Exit client", () => {
       startFetch = resolve;
     });
     let fetchWasAborted = false;
-    const configured = config(
+    const configured = dependencies(
       (_input, init) =>
         new Promise<Response>((_resolve, reject) => {
           startFetch?.();
@@ -61,7 +58,7 @@ describe("Relay Exit client", () => {
 
   test("reports timeout from a controlled timeout signal", async () => {
     const timeout = new AbortController();
-    const configured = config(
+    let configured = dependencies(
       (_input, init) =>
         new Promise<Response>((_resolve, reject) => {
           init?.signal?.addEventListener("abort", () => reject(init.signal?.reason), {
@@ -69,7 +66,7 @@ describe("Relay Exit client", () => {
           });
         }),
     );
-    configured.exitTimeoutSignal = () => timeout.signal;
+    configured = { ...configured, timeoutSignal: () => timeout.signal };
     const failure = Effect.runPromise(Effect.flip(forward(configured)));
 
     timeout.abort("controlled timeout");

@@ -1,11 +1,12 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { generateKeyPairSync, type KeyObject } from "node:crypto";
 import { sealRequest } from "@shallot/protocol";
-import { Effect } from "effect";
+import { Effect, Layer } from "effect";
 import type { ExitConfig } from "./config.ts";
 import { createExitServer } from "./exit.ts";
-import type { LlmProviderService } from "./llm-provider.ts";
+import { LlmProvider, type LlmProviderService } from "./llm-provider.ts";
 import { MemoryReplayCache, type ReplayCache } from "./replay-cache.ts";
+import { replayProtectionLayer } from "./replay-protection.ts";
 
 const servers: Array<{ stop(closeActiveConnections?: boolean): Promise<void> }> = [];
 
@@ -33,22 +34,34 @@ async function sealedRequest(): Promise<{
   };
 }
 
-function config(
-  privateKeys: Map<string, KeyObject>,
-  provider: LlmProviderService,
-  replayCache: ReplayCache = new MemoryReplayCache(60_000),
-): ExitConfig {
+function config(privateKeys: Map<string, KeyObject>): ExitConfig {
   return {
     hostname: "127.0.0.1",
     port: 0,
     relayToken: "relay-token",
     privateKeys,
-    llm: { provider, allowedModels: new Set(["test-model"]), maxResponseBytes: 1024 },
+    llm: {
+      url: new URL("https://provider.example/v1/chat/completions"),
+      timeoutMs: 1_000,
+      allowedModels: new Set(["test-model"]),
+      maxResponseBytes: 1024,
+    },
     maxEnvelopeBytes: 4096,
     responsePaddingBytes: 256,
     responseFlushMs: 1,
-    replayCache,
+    replayTtlMs: 60_000,
+    replayMaxEntries: 100,
   };
+}
+
+function services(
+  provider: LlmProviderService,
+  replayCache: ReplayCache = new MemoryReplayCache(60_000),
+) {
+  return Layer.mergeAll(
+    Layer.succeed(LlmProvider, provider),
+    replayProtectionLayer(replayCache),
+  );
 }
 
 describe("Exit Effect runtime", () => {
@@ -61,7 +74,7 @@ describe("Exit Effect runtime", () => {
         return Effect.succeed(Response.json({ choices: [] }));
       },
     };
-    const server = createExitServer(config(sealed.privateKeys, provider));
+    const server = createExitServer(config(sealed.privateKeys), services(provider));
     servers.push(server);
 
     const response = await fetch(`http://127.0.0.1:${server.port}/v1/chat/completions`, {
@@ -89,7 +102,10 @@ describe("Exit Effect runtime", () => {
         throw new Error("private-key-canary");
       },
     };
-    const server = createExitServer(config(sealed.privateKeys, provider, replayCache));
+    const server = createExitServer(
+      config(sealed.privateKeys),
+      services(provider, replayCache),
+    );
     servers.push(server);
 
     const response = await fetch(`http://127.0.0.1:${server.port}/v1/chat/completions`, {

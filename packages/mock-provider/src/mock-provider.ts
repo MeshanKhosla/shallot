@@ -12,11 +12,17 @@ import {
 } from "./errors.ts";
 import { createOpenAIResponse, parseChatRequest } from "./openai-response.ts";
 
+export interface MockProviderHooks {
+  readonly observe?: (observation: import("./config.ts").ProviderObservation) => void;
+  readonly observeCancellation?: () => void;
+}
+
 export const handleMockProviderRequest = Effect.fn("handleMockProviderRequest")(
   function* (
     req: Request,
     config: MockProviderConfig,
     logger = createDebugLogger("provider"),
+    hooks: MockProviderHooks = {},
   ): Effect.fn.Return<Response, MockProviderRequestError> {
     const url = new URL(req.url);
     if (req.method !== "POST" || url.pathname !== "/v1/chat/completions") {
@@ -34,7 +40,7 @@ export const handleMockProviderRequest = Effect.fn("handleMockProviderRequest")(
       catch: () => new ProviderInvalidRequest(),
     });
     yield* Effect.sync(() => {
-      config.observe?.({
+      hooks.observe?.({
         authorization: req.headers.get("authorization"),
         request,
       });
@@ -47,7 +53,7 @@ export const handleMockProviderRequest = Effect.fn("handleMockProviderRequest")(
     const response = createOpenAIResponse(
       request,
       config.chunkDelayMs,
-      config.observeCancellation,
+      hooks.observeCancellation,
     );
     if (logger.enabled) {
       yield* Effect.sync(() => {
@@ -79,6 +85,7 @@ function stopWithRuntime(
 
 export function createMockProviderServer(
   config: MockProviderConfig = loadConfig(),
+  hooks: MockProviderHooks = {},
 ): Server<undefined> {
   const logger = createDebugLogger("provider");
   const runtime = ManagedRuntime.make(Layer.empty);
@@ -87,7 +94,7 @@ export function createMockProviderServer(
     hostname: config.hostname,
     idleTimeout: 60,
     fetch(req) {
-      const program = handleMockProviderRequest(req, config, logger).pipe(
+      const program = handleMockProviderRequest(req, config, logger, hooks).pipe(
         Effect.catch((error) => Effect.succeed(providerErrorResponse(error))),
         Effect.annotateLogs({ component: "mock-provider" }),
         Effect.withSpan("mock-provider.request"),

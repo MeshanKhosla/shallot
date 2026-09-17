@@ -2,7 +2,6 @@ import type { KeyObject } from "node:crypto";
 import { parseX25519PrivateKey } from "@shallot/protocol";
 import { loadLlmConfig } from "./llm-config.ts";
 import type { LlmConfig } from "./llm-provider.ts";
-import { MemoryReplayCache, type ReplayCache } from "./replay-cache.ts";
 
 export interface ExitConfig {
   hostname: string;
@@ -13,7 +12,8 @@ export interface ExitConfig {
   maxEnvelopeBytes: number;
   responsePaddingBytes: number;
   responseFlushMs: number;
-  replayCache: ReplayCache;
+  replayTtlMs: number;
+  replayMaxEntries: number;
 }
 
 function positiveInteger(name: string, fallback: number): number {
@@ -42,10 +42,7 @@ export function loadConfig(): ExitConfig {
     maxEnvelopeBytes: positiveInteger("EXIT_MAX_ENVELOPE_BYTES", 3 * 1024 * 1024),
     responsePaddingBytes: positiveInteger("EXIT_RESPONSE_PADDING_BYTES", 4096),
     responseFlushMs: positiveInteger("EXIT_RESPONSE_FLUSH_MS", 25),
-    replayCache: new MemoryReplayCache(
-      positiveInteger("EXIT_REPLAY_TTL_MS", 5 * 60_000),
-      Date.now,
-      positiveInteger("EXIT_REPLAY_MAX_ENTRIES", 100_000),
-    ),
+    replayTtlMs: positiveInteger("EXIT_REPLAY_TTL_MS", 5 * 60_000),
+    replayMaxEntries: positiveInteger("EXIT_REPLAY_MAX_ENTRIES", 100_000),
   };
 }

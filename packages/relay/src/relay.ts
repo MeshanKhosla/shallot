@@ -25,8 +25,20 @@ import {
   relayErrorResponse,
 } from "./errors.ts";
 import { ExitClient, exitClientLayer } from "./exit-client.ts";
-import { RequestTracker } from "./request-tracker.ts";
-import { TenantAuthenticator } from "./tenant-auth.ts";
+import { RequestTracker, requestTrackerLayer } from "./request-tracker.ts";
+import { TenantAuthenticator, tenantAuthenticatorLayer } from "./tenant-auth.ts";
+
+export interface RelayObservation {
+  tenantId: string;
+  requestId: string;
+  body: string;
+  forwardedHeaders: Headers;
+}
+
+export interface RelayHooks {
+  readonly observe?: (observation: RelayObservation) => void;
+  readonly observeResponseChunk?: (chunk: Uint8Array) => void;
+}
 
 function readEnvelope(
   req: Request,
@@ -93,6 +105,7 @@ export const handleRelayRequest = Effect.fn("handleRelayRequest")(function* (
   req: Request,
   config: RelayConfig,
   logger = createDebugLogger("relay"),
+  hooks: RelayHooks = {},
 ): Effect.fn.Return<
   Response,
   RelayRequestError,
@@ -133,7 +146,7 @@ export const handleRelayRequest = Effect.fn("handleRelayRequest")(function* (
         authorization: `Bearer ${config.exitToken}`,
         "content-type": "application/json",
       });
-      config.observe?.({
+      hooks.observe?.({
         tenantId: tenant.id,
         requestId: envelope.requestId,
         body: rawBody,
@@ -149,7 +162,7 @@ export const handleRelayRequest = Effect.fn("handleRelayRequest")(function* (
           requestId: envelope.requestId,
           encryptedBytes: chunk.byteLength,
         });
-        config.observeResponseChunk?.(chunk);
+        hooks.observeResponseChunk?.(chunk);
       }),
       {
         status: 200,
@@ -168,11 +181,28 @@ export const handleRelayRequest = Effect.fn("handleRelayRequest")(function* (
   );
 });
 
-type RelayServices =
+export type RelayServices =
   | ConcurrencyLimiter
   | TenantAuthenticator
   | RequestTracker
   | ExitClient;
+
+export function relayLive(config: RelayConfig): Layer.Layer<RelayServices> {
+  return Layer.mergeAll(
+    tenantAuthenticatorLayer(config.tenantTokens),
+    requestTrackerLayer({
+      ttlMs: config.requestTtlMs,
+      maxEntries: config.maxRequestEntries,
+      maxEntriesPerTenant: config.maxRequestEntriesPerTenant,
+    }),
+    concurrencyLimiterLayer(config.maxConcurrentRequests),
+    exitClientLayer({
+      url: config.exitUrl,
+      token: config.exitToken,
+      timeoutMs: config.exitTimeoutMs,
+    }),
+  );
+}
 
 function stopWithRuntime(
   server: Server<undefined>,
@@ -184,21 +214,19 @@ function stopWithRuntime(
   };
 }
 
-export function createRelayServer(config: RelayConfig = loadConfig()): Server<undefined> {
+export function createRelayServer(
+  config: RelayConfig = loadConfig(),
+  services: Layer.Layer<RelayServices> = relayLive(config),
+  hooks: RelayHooks = {},
+): Server<undefined> {
   const logger = createDebugLogger("relay");
-  const layer = Layer.mergeAll(
-    Layer.succeed(TenantAuthenticator, config.authenticator),
-    Layer.succeed(RequestTracker, config.requestTracker),
-    concurrencyLimiterLayer(config.maxConcurrentRequests),
-    exitClientLayer(config),
-  );
-  const runtime = ManagedRuntime.make(layer);
+  const runtime = ManagedRuntime.make(services);
   const server = Bun.serve({
     port: config.port,
     hostname: config.hostname,
     idleTimeout: 60,
     fetch(req) {
-      const program = handleRelayRequest(req, config, logger).pipe(
+      const program = handleRelayRequest(req, config, logger, hooks).pipe(
         Effect.catch((error) => Effect.succeed(relayErrorResponse(error))),
         Effect.annotateLogs({ component: "relay" }),
         Effect.withSpan("relay.request"),

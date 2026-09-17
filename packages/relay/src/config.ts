@@ -1,35 +1,15 @@
-import { MemoryRequestTracker, type RequestTrackerService } from "./request-tracker.ts";
-import {
-  StaticTenantAuthenticator,
-  type TenantAuthenticatorService,
-} from "./tenant-auth.ts";
-
-export interface RelayObservation {
-  tenantId: string;
-  requestId: string;
-  body: string;
-  forwardedHeaders: Headers;
-}
-
-export type RelayFetch = (
-  input: string | URL | Request,
-  init?: RequestInit,
-) => Promise<Response>;
-
 export interface RelayConfig {
   hostname: string;
   port: number;
   exitUrl: URL;
   exitToken: string;
-  authenticator: TenantAuthenticatorService;
-  requestTracker: RequestTrackerService;
+  tenantTokens: ReadonlyMap<string, string>;
+  requestTtlMs: number;
+  maxRequestEntries: number;
+  maxRequestEntriesPerTenant: number;
   maxEnvelopeBytes: number;
   maxConcurrentRequests: number;
   exitTimeoutMs: number;
-  fetch: RelayFetch;
-  exitTimeoutSignal?: (timeoutMs: number) => AbortSignal;
-  observe?: (observation: RelayObservation) => void;
-  observeResponseChunk?: (chunk: Uint8Array) => void;
 }
 
 function positiveInteger(name: string, fallback: number): number {
@@ -69,16 +49,15 @@ export function loadConfig(): RelayConfig {
       process.env.RELAY_EXIT_URL ?? "http://127.0.0.1:8786/v1/chat/completions",
     ),
     exitToken,
-    authenticator: new StaticTenantAuthenticator(tenantTokensFromEnvironment()),
-    requestTracker: new MemoryRequestTracker(
-      positiveInteger("RELAY_REQUEST_TTL_MS", 5 * 60_000),
-      Date.now,
-      positiveInteger("RELAY_REQUEST_MAX_ENTRIES", 100_000),
-      positiveInteger("RELAY_REQUEST_MAX_ENTRIES_PER_TENANT", 10_000),
+    tenantTokens: tenantTokensFromEnvironment(),
+    requestTtlMs: positiveInteger("RELAY_REQUEST_TTL_MS", 5 * 60_000),
+    maxRequestEntries: positiveInteger("RELAY_REQUEST_MAX_ENTRIES", 100_000),
+    maxRequestEntriesPerTenant: positiveInteger(
+      "RELAY_REQUEST_MAX_ENTRIES_PER_TENANT",
+      10_000,
     ),
     maxEnvelopeBytes: positiveInteger("RELAY_MAX_ENVELOPE_BYTES", 3 * 1024 * 1024),
     maxConcurrentRequests: positiveInteger("RELAY_MAX_CONCURRENT_REQUESTS", 100),
     exitTimeoutMs: positiveInteger("RELAY_EXIT_TIMEOUT_MS", 65_000),
-    fetch,
   };
 }

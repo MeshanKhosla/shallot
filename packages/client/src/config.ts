@@ -1,10 +1,5 @@
 import { parseX25519PublicKey } from "@shallot/protocol";
 
-export type SidecarFetch = (
-  input: string | URL | Request,
-  init?: RequestInit,
-) => Promise<Response>;
-
 export interface SidecarConfig {
   hostname: string;
   port: number;
@@ -17,8 +12,6 @@ export interface SidecarConfig {
   maxResponseLineBytes: number;
   maxResponseFrames: number;
   maxResponseBytes: number;
-  fetch?: SidecarFetch;
-  relayTimeoutSignal?: (timeoutMs: number) => AbortSignal;
 }
 
 function positiveInteger(name: string, fallback: number): number {

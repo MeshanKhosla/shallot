@@ -1,4 +1,4 @@
-import { Context, Effect } from "effect";
+import { Context, Effect, Layer } from "effect";
 import { RelayTrackerCapacityExhausted } from "./errors.ts";
 
 export class RequestTracker extends Context.Service<
@@ -55,4 +55,24 @@ export class MemoryRequestTracker implements RequestTrackerService {
       else this.tenantCounts.set(entry.tenantId, count);
     }
   }
+}
+
+export interface RequestTrackerConfig {
+  readonly ttlMs: number;
+  readonly maxEntries: number;
+  readonly maxEntriesPerTenant: number;
+}
+
+export function requestTrackerLayer(
+  config: RequestTrackerConfig,
+): Layer.Layer<RequestTracker> {
+  return Layer.succeed(
+    RequestTracker,
+    new MemoryRequestTracker(
+      config.ttlMs,
+      Date.now,
+      config.maxEntries,
+      config.maxEntriesPerTenant,
+    ),
+  );
 }
