@@ -1,4 +1,4 @@
-import { createDebugLogger } from "@shallot/observability";
+import { createDebugLogger, formatCiphertextPreview } from "@shallot/observability";
 import {
   BodyTooLargeError,
   PATHS,
@@ -115,7 +115,7 @@ export function createRelayServer(config: RelayConfig = loadConfig()): Server<un
           tenantId: tenant.id,
           requestId: envelope.requestId,
           keyId: envelope.keyId,
-          prompt: "[encrypted for Exit]",
+          prompt: formatCiphertextPreview(envelope.ciphertext),
           ciphertextCharacters: envelope.ciphertext.length,
         });
         try {
@@ -151,8 +151,7 @@ export function createRelayServer(config: RelayConfig = loadConfig()): Server<un
             logger.debug("response.chunk.received", {
               tenantId: tenant.id,
               requestId: envelope.requestId,
-              answer: "[encrypted for Sidecar]",
-              bytes: chunk.byteLength,
+              encryptedBytes: chunk.byteLength,
             });
             config.observeResponseChunk?.(chunk);
           }),

@@ -30,6 +30,18 @@ export function formatBodyForDebug(body: string): unknown {
   }
 }
 
+export function formatCiphertextPreview(
+  ciphertext: string,
+  visibleCharacters = 10,
+): string {
+  if (!Number.isSafeInteger(visibleCharacters) || visibleCharacters <= 0) {
+    throw new Error("visible ciphertext characters must be a positive integer");
+  }
+  const prefix = ciphertext.slice(0, visibleCharacters);
+  const ellipsis = ciphertext.length > visibleCharacters ? "..." : "";
+  return `${prefix}${ellipsis} [encrypted]`;
+}
+
 export function createDebugLogger(
   component: string,
   options: DebugLoggerOptions = {},

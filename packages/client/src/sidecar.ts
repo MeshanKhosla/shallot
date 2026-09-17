@@ -1,4 +1,4 @@
-import { createDebugLogger } from "@shallot/observability";
+import { createDebugLogger, formatCiphertextPreview } from "@shallot/observability";
 import { PATHS, sealRequest } from "@shallot/protocol";
 import type { Server } from "bun";
 import { readChatRequest } from "./chat-request.ts";
@@ -36,7 +36,7 @@ export function createSidecarServer(
         logger.debug("request.encrypted", {
           requestId: sealed.envelope.requestId,
           keyId: sealed.envelope.keyId,
-          prompt: "[encrypted for Exit]",
+          prompt: formatCiphertextPreview(sealed.envelope.ciphertext),
           ciphertextCharacters: sealed.envelope.ciphertext.length,
         });
         const relayBody = await forwardToRelay(req, sealed.envelope, config);

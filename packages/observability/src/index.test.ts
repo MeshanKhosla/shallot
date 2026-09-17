@@ -3,6 +3,7 @@ import {
   createDebugLogger,
   type DebugLogEntry,
   formatBodyForDebug,
+  formatCiphertextPreview,
   formatDebugEntry,
 } from "./index.ts";
 
@@ -14,14 +15,17 @@ describe("debug logger", () => {
       sink: (entry) => entries.push(entry),
     });
 
-    logger.debug("request.received", { tenantId: "tenant-one", prompt: "[encrypted]" });
+    logger.debug("request.received", {
+      tenantId: "tenant-one",
+      prompt: "abcdefghij... [encrypted]",
+    });
 
     expect(entries).toHaveLength(1);
     expect(entries[0]).toMatchObject({
       level: "debug",
       component: "relay",
       event: "request.received",
-      view: { tenantId: "tenant-one", prompt: "[encrypted]" },
+      view: { tenantId: "tenant-one", prompt: "abcdefghij... [encrypted]" },
     });
   });
 
@@ -57,5 +61,13 @@ describe("debug logger", () => {
     expect(formatBodyForDebug('{"answer":"hello"}')).toEqual({ answer: "hello" });
     expect(formatBodyForDebug("data: streamed text")).toBe("data: streamed text");
     expect(formatBodyForDebug("")).toBe("");
+  });
+
+  test("shows a bounded ciphertext preview", () => {
+    expect(formatCiphertextPreview("abcdefghijklmnop")).toBe("abcdefghij... [encrypted]");
+    expect(formatCiphertextPreview("short")).toBe("short [encrypted]");
+    expect(() => formatCiphertextPreview("ciphertext", 0)).toThrow(
+      "visible ciphertext characters must be a positive integer",
+    );
   });
 });

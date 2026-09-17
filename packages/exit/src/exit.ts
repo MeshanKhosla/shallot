@@ -1,4 +1,4 @@
-import { createDebugLogger } from "@shallot/observability";
+import { createDebugLogger, formatCiphertextPreview } from "@shallot/observability";
 import {
   BodyTooLargeError,
   type OpenedRequestContext,
@@ -71,7 +71,7 @@ export function createExitServer(config: ExitConfig = loadConfig()): Server<unde
           tenantId: "unknown",
           requestId: envelope.requestId,
           keyId: envelope.keyId,
-          prompt: "[encrypted]",
+          prompt: formatCiphertextPreview(envelope.ciphertext),
           ciphertextCharacters: envelope.ciphertext.length,
         });
         const privateKey = config.privateKeys.get(envelope.keyId);

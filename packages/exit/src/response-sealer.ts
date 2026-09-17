@@ -2,6 +2,7 @@ import {
   createDebugLogger,
   type DebugLogger,
   formatBodyForDebug,
+  formatCiphertextPreview,
 } from "@shallot/observability";
 import {
   createResponseSealer,
@@ -168,7 +169,7 @@ export async function sealProviderResponse(
             requestId,
             sequence: 0,
             kind: "head",
-            answer: "[encrypted for Sidecar]",
+            answer: formatCiphertextPreview(head.ciphertext),
           });
           controller.enqueue(serializeFrame(head));
           return;
@@ -196,7 +197,7 @@ export async function sealProviderResponse(
           sequence,
           kind: "data",
           final: chunk.done === true,
-          answer: "[encrypted for Sidecar]",
+          answer: formatCiphertextPreview(frame.ciphertext),
         });
         controller.enqueue(serializeFrame(frame));
         sequence += 1;
