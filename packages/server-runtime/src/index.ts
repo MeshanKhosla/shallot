@@ -5,6 +5,7 @@ export {
 } from "./defects.ts";
 export {
   bindRuntimeLifecycle,
+  type DisposableRuntime,
   type EffectServer,
   stopOnSignals,
 } from "./lifecycle.ts";

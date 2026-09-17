@@ -80,7 +80,7 @@ function post(server: { port?: number }, body: string): Promise<Response> {
 }
 
 describe("Relay Effect runtime", () => {
-  test("releases concurrency after a completed response", async () => {
+  test("uses a replacement service Layer and releases concurrency", async () => {
     const server = serverWith(async () => new Response("frame\n"));
     servers.push(server);
 

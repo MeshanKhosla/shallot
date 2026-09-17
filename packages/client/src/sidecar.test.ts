@@ -7,7 +7,10 @@ import {
   parseSealedRequest,
   sealRequest,
 } from "@shallot/protocol";
+import { Effect, Layer } from "effect";
 import type { SidecarConfig } from "./config.ts";
+import { RelayRejected } from "./errors.ts";
+import { RelayClient } from "./relay.ts";
 import { createBufferedResponse, createStreamingResponse } from "./response.ts";
 import { createSidecarServer } from "./sidecar.ts";
 
@@ -142,6 +145,39 @@ async function postChat(url: string): Promise<Response> {
 }
 
 describe("sidecar", () => {
+  test("uses a replacement RelayClient Layer", async () => {
+    const exitKeys = generateKeyPairSync("x25519");
+    let forwarded = false;
+    const config: SidecarConfig = {
+      hostname: "127.0.0.1",
+      port: 0,
+      relayUrl: new URL("https://unused.example/v1/chat/completions"),
+      exitPublicKey: exitKeys.publicKey,
+      exitKeyId: "local",
+      requestPaddingBytes: 1024,
+      maxRequestBytes: 64 * 1024,
+      relayTimeoutMs: 1_000,
+      maxResponseLineBytes: 64 * 1024,
+      maxResponseFrames: 100,
+      maxResponseBytes: 64 * 1024,
+    };
+    const relay = Layer.succeed(RelayClient, {
+      forward() {
+        forwarded = true;
+        return Effect.fail(new RelayRejected({ status: 418 }));
+      },
+    });
+    const sidecar = createSidecarServer(config, relay);
+    servers.push(sidecar);
+
+    const response = await postChat(
+      `http://127.0.0.1:${sidecar.port}/v1/chat/completions`,
+    );
+
+    expect(response.status).toBe(418);
+    expect(forwarded).toBeTrue();
+  });
+
   test("seals a chat request and decrypts a buffered response", async () => {
     const harness = setup([
       JSON.stringify({

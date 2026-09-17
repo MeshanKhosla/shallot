@@ -1,13 +1,16 @@
 import type { Server } from "bun";
-import type { ManagedRuntime } from "effect";
 
 export interface EffectServer extends Server<undefined> {
   stop(closeActiveConnections?: boolean): Promise<void>;
 }
 
-export function bindRuntimeLifecycle<R>(
+export interface DisposableRuntime {
+  dispose(): Promise<void>;
+}
+
+export function bindRuntimeLifecycle(
   server: Server<undefined>,
-  runtime: ManagedRuntime.ManagedRuntime<R, never>,
+  runtime: DisposableRuntime,
 ): EffectServer {
   const stopServer = server.stop.bind(server);
   let shutdown: Promise<void> | undefined;
