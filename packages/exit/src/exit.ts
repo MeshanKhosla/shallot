@@ -9,136 +9,184 @@ import {
   type SealedRequest,
 } from "@shallot/protocol";
 import type { Server } from "bun";
+import { Effect, Layer, ManagedRuntime } from "effect";
 import type { ExitConfig } from "./config.ts";
-import { ExitHttpError, exitErrorResponse } from "./errors.ts";
-import { ReplayCacheCapacityError } from "./replay-cache.ts";
+import {
+  ExitAuthenticationError,
+  ExitInvalidRequest,
+  ExitReplayDetected,
+  type ExitRequestError,
+  ExitRequestTooLarge,
+  ExitRouteNotFound,
+  encryptedProviderFailure,
+  exitDefectResponse,
+  exitErrorResponse,
+} from "./errors.ts";
+import { LlmProvider } from "./llm-provider.ts";
+import { ReplayProtection, replayProtectionLayer } from "./replay-protection.ts";
 import { sealProviderResponse } from "./response-sealer.ts";
 import { sanitizeChatRequest } from "./sanitize-request.ts";
 import { requireRelayAuthorization } from "./service-auth.ts";
 
-async function readEnvelope(req: Request, maxBytes: number): Promise<SealedRequest> {
-  let body: Uint8Array;
-  try {
-    body = await readLimitedBody(req, maxBytes);
-  } catch (error) {
-    if (error instanceof BodyTooLargeError) {
-      throw new ExitHttpError(413, "Encrypted request is too large", "request_too_large");
-    }
-    throw error;
-  }
-
-  try {
-    return parseSealedRequest(JSON.parse(new TextDecoder().decode(body)));
-  } catch {
-    throw new ExitHttpError(400, "Invalid encrypted request", "invalid_request_error");
-  }
+function expectedDefect<A, E>(
+  evaluate: () => A,
+  guard: (cause: unknown) => cause is E,
+): Effect.Effect<A, E> {
+  return Effect.sync(evaluate).pipe(
+    Effect.catchDefect((cause) =>
+      guard(cause) ? Effect.fail(cause) : Effect.die(cause),
+    ),
+  );
 }
 
-function encryptedError(error: unknown): Response {
-  if (error instanceof ExitHttpError) {
-    return Response.json(
-      { error: { message: error.message, type: error.type } },
-      { status: error.status },
-    );
-  }
-  return Response.json(
-    { error: { message: "Exit could not process the request", type: "exit_error" } },
-    { status: 500 },
+function readEnvelope(
+  req: Request,
+  maxBytes: number,
+): Effect.Effect<SealedRequest, ExitRequestTooLarge | ExitInvalidRequest> {
+  const readBody = Effect.promise(() => readLimitedBody(req, maxBytes)).pipe(
+    Effect.catchDefect((cause) =>
+      cause instanceof BodyTooLargeError
+        ? Effect.fail(new ExitRequestTooLarge())
+        : Effect.die(cause),
+    ),
   );
+
+  return Effect.gen(function* () {
+    const body = yield* readBody;
+    return yield* Effect.try({
+      try: () => parseSealedRequest(JSON.parse(new TextDecoder().decode(body))),
+      catch: () => new ExitInvalidRequest({ message: "Invalid encrypted request" }),
+    });
+  });
+}
+
+function openEnvelope(
+  envelope: SealedRequest,
+  config: ExitConfig,
+): Effect.Effect<OpenedRequestContext, ExitInvalidRequest> {
+  const privateKey = config.privateKeys.get(envelope.keyId);
+  if (!privateKey) {
+    return Effect.fail(new ExitInvalidRequest({ message: "Unknown Exit key" }));
+  }
+  return Effect.tryPromise({
+    try: () => openRequest(envelope, privateKey),
+    catch: () => new ExitInvalidRequest({ message: "Invalid encrypted request" }),
+  });
+}
+
+function sealResponse(
+  response: Response,
+  opened: OpenedRequestContext,
+  requestId: string,
+  config: ExitConfig,
+  logger: ReturnType<typeof createDebugLogger>,
+): Effect.Effect<Response> {
+  return Effect.promise(() =>
+    sealProviderResponse(response, opened.responsePublicKey, requestId, config, logger),
+  );
+}
+
+export const handleExitRequest = Effect.fn("handleExitRequest")(function* (
+  req: Request,
+  config: ExitConfig,
+  logger = createDebugLogger("exit"),
+): Effect.fn.Return<Response, ExitRequestError, LlmProvider | ReplayProtection> {
+  const url = new URL(req.url);
+  if (req.method !== "POST" || url.pathname !== PATHS.chat) {
+    return yield* new ExitRouteNotFound();
+  }
+
+  yield* expectedDefect(
+    () => requireRelayAuthorization(req.headers.get("authorization"), config.relayToken),
+    (cause): cause is ExitAuthenticationError => cause instanceof ExitAuthenticationError,
+  );
+
+  const envelope = yield* readEnvelope(req, config.maxEnvelopeBytes);
+  yield* Effect.sync(() =>
+    logger.debug("request.received", {
+      tenantId: "unknown",
+      requestId: envelope.requestId,
+      keyId: envelope.keyId,
+      prompt: formatCiphertextPreview(envelope.ciphertext),
+      ciphertextCharacters: envelope.ciphertext.length,
+    }),
+  );
+
+  const opened = yield* openEnvelope(envelope, config);
+  const sanitized = yield* expectedDefect(
+    () => {
+      const plaintext = JSON.parse(opened.payload.toString("utf8"));
+      return sanitizeChatRequest(plaintext, config.llm.allowedModels);
+    },
+    (cause): cause is ExitInvalidRequest => cause instanceof ExitInvalidRequest,
+  ).pipe(
+    Effect.tap((request) =>
+      Effect.sync(() =>
+        logger.debug("request.decrypted", {
+          tenantId: "unknown",
+          requestId: envelope.requestId,
+          request,
+        }),
+      ),
+    ),
+    Effect.catch((error) =>
+      sealResponse(exitErrorResponse(error), opened, envelope.requestId, config, logger),
+    ),
+  );
+  if (sanitized instanceof Response) return sanitized;
+
+  const replayProtection = yield* ReplayProtection;
+  const replayKey = `${envelope.keyId}:${envelope.encapsulatedKey}`;
+  if (!(yield* replayProtection.claim(replayKey))) {
+    return yield* new ExitReplayDetected();
+  }
+
+  const provider = yield* LlmProvider;
+  const providerResponse = yield* provider
+    .complete(sanitized, req.signal)
+    .pipe(Effect.catch((error) => Effect.succeed(encryptedProviderFailure(error))));
+
+  return yield* sealResponse(
+    providerResponse,
+    opened,
+    envelope.requestId,
+    config,
+    logger,
+  );
+});
+
+function stopWithRuntime(
+  server: Server<undefined>,
+  runtime: ManagedRuntime.ManagedRuntime<LlmProvider | ReplayProtection, never>,
+): void {
+  const stop = server.stop.bind(server);
+  server.stop = async (closeActiveConnections?: boolean) => {
+    await Promise.all([stop(closeActiveConnections), runtime.dispose()]);
+  };
 }
 
 export function createExitServer(config: ExitConfig): Server<undefined> {
   const logger = createDebugLogger("exit");
-
-  return Bun.serve({
+  const layer = Layer.mergeAll(
+    Layer.succeed(LlmProvider, config.llm.provider),
+    replayProtectionLayer(config.replayCache),
+  );
+  const runtime = ManagedRuntime.make(layer);
+  const server = Bun.serve({
     port: config.port,
     hostname: config.hostname,
     idleTimeout: 60,
-    async fetch(req) {
-      const url = new URL(req.url);
-      if (req.method !== "POST" || url.pathname !== PATHS.chat) {
-        return Response.json(
-          { error: { message: `only POST ${PATHS.chat}`, type: "not_found_error" } },
-          { status: 404 },
-        );
-      }
-
-      try {
-        requireRelayAuthorization(req.headers.get("authorization"), config.relayToken);
-        const envelope = await readEnvelope(req, config.maxEnvelopeBytes);
-        logger.debug("request.received", {
-          tenantId: "unknown",
-          requestId: envelope.requestId,
-          keyId: envelope.keyId,
-          prompt: formatCiphertextPreview(envelope.ciphertext),
-          ciphertextCharacters: envelope.ciphertext.length,
-        });
-        const privateKey = config.privateKeys.get(envelope.keyId);
-        if (!privateKey) {
-          throw new ExitHttpError(400, "Unknown Exit key", "invalid_request_error");
-        }
-
-        let opened: OpenedRequestContext;
-        try {
-          opened = await openRequest(envelope, privateKey);
-        } catch {
-          throw new ExitHttpError(
-            400,
-            "Invalid encrypted request",
-            "invalid_request_error",
-          );
-        }
-
-        let sanitized: ReturnType<typeof sanitizeChatRequest>;
-        try {
-          const plaintext = JSON.parse(opened.payload.toString("utf8"));
-          sanitized = sanitizeChatRequest(plaintext, config.llm.allowedModels);
-          logger.debug("request.decrypted", {
-            tenantId: "unknown",
-            requestId: envelope.requestId,
-            request: sanitized,
-          });
-        } catch (error) {
-          return await sealProviderResponse(
-            encryptedError(error),
-            opened.responsePublicKey,
-            envelope.requestId,
-            config,
-            logger,
-          );
-        }
-
-        const replayKey = `${envelope.keyId}:${envelope.encapsulatedKey}`;
-        try {
-          if (!config.replayCache.claim(replayKey)) {
-            throw new ExitHttpError(
-              409,
-              "Encrypted request was replayed",
-              "replay_error",
-            );
-          }
-        } catch (error) {
-          if (error instanceof ReplayCacheCapacityError) {
-            throw new ExitHttpError(503, "Exit replay cache is full", "overloaded_error");
-          }
-          throw error;
-        }
-
-        const providerResponse = await config.llm.provider.complete(
-          sanitized,
-          req.signal,
-        );
-
-        return await sealProviderResponse(
-          providerResponse,
-          opened.responsePublicKey,
-          envelope.requestId,
-          config,
-          logger,
-        );
-      } catch (error) {
-        return exitErrorResponse(error);
-      }
+    fetch(req) {
+      const program = handleExitRequest(req, config, logger).pipe(
+        Effect.catch((error) => Effect.succeed(exitErrorResponse(error))),
+        Effect.annotateLogs({ component: "exit" }),
+        Effect.withSpan("exit.request"),
+      );
+      return runtime
+        .runPromise(program, { signal: req.signal })
+        .catch(() => exitDefectResponse());
     },
   });
+  stopWithRuntime(server, runtime);
+  return server;
 }

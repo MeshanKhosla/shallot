@@ -1,4 +1,4 @@
-import { ExitHttpError } from "./errors.ts";
+import { ExitInvalidRequest } from "./errors.ts";
 
 const ALLOWED_FIELDS = [
   "model",
@@ -51,11 +51,7 @@ function copyFields(
   description: string,
 ): Record<string, unknown> {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
-    throw new ExitHttpError(
-      400,
-      `${description} must be an object`,
-      "invalid_request_error",
-    );
+    throw new ExitInvalidRequest({ message: `${description} must be an object` });
   }
   const source = value as Record<string, unknown>;
   const result: Record<string, unknown> = {};
@@ -69,15 +65,11 @@ function sanitizeMessages(messages: unknown[]): Array<Record<string, unknown>> {
   return messages.map((message) => {
     const sanitized = copyFields(message, MESSAGE_FIELDS, "each message");
     if (typeof sanitized.role !== "string") {
-      throw new ExitHttpError(400, "each message needs a role", "invalid_request_error");
+      throw new ExitInvalidRequest({ message: "each message needs a role" });
     }
     if (sanitized.tool_calls !== undefined) {
       if (!Array.isArray(sanitized.tool_calls)) {
-        throw new ExitHttpError(
-          400,
-          "tool_calls must be an array",
-          "invalid_request_error",
-        );
+        throw new ExitInvalidRequest({ message: "tool_calls must be an array" });
       }
       sanitized.tool_calls = sanitized.tool_calls.map((toolCall) => {
         const call = copyFields(toolCall, TOOL_CALL_FIELDS, "each tool call");
@@ -104,7 +96,7 @@ function sanitizeMessages(messages: unknown[]): Array<Record<string, unknown>> {
 
 function sanitizeTools(value: unknown): Array<Record<string, unknown>> {
   if (!Array.isArray(value)) {
-    throw new ExitHttpError(400, "tools must be an array", "invalid_request_error");
+    throw new ExitInvalidRequest({ message: "tools must be an array" });
   }
   return value.map((tool) => {
     const sanitized = copyFields(tool, TOOL_FIELDS, "each tool");
@@ -124,25 +116,21 @@ export function sanitizeChatRequest(
   allowedModels?: ReadonlySet<string>,
 ): SanitizedChatRequest {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
-    throw new ExitHttpError(
-      400,
-      "Request must be a JSON object",
-      "invalid_request_error",
-    );
+    throw new ExitInvalidRequest({ message: "Request must be a JSON object" });
   }
 
   const source = value as Record<string, unknown>;
   if (typeof source.model !== "string" || source.model.length === 0) {
-    throw new ExitHttpError(400, "model is required", "invalid_request_error");
+    throw new ExitInvalidRequest({ message: "model is required" });
   }
   if (!Array.isArray(source.messages)) {
-    throw new ExitHttpError(400, "messages must be an array", "invalid_request_error");
+    throw new ExitInvalidRequest({ message: "messages must be an array" });
   }
   if (source.stream !== undefined && typeof source.stream !== "boolean") {
-    throw new ExitHttpError(400, "stream must be a boolean", "invalid_request_error");
+    throw new ExitInvalidRequest({ message: "stream must be a boolean" });
   }
   if (allowedModels && !allowedModels.has(source.model)) {
-    throw new ExitHttpError(400, "model is not allowed", "invalid_request_error");
+    throw new ExitInvalidRequest({ message: "model is not allowed" });
   }
 
   const sanitized: Record<string, unknown> = {};

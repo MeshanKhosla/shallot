@@ -1,5 +1,5 @@
 import { createHash, timingSafeEqual } from "node:crypto";
-import { ExitHttpError } from "./errors.ts";
+import { ExitAuthenticationError } from "./errors.ts";
 
 function digest(value: string): Buffer {
   return createHash("sha256").update(value).digest();
@@ -15,6 +15,6 @@ export function requireRelayAuthorization(
     : "";
   const matches = timingSafeEqual(digest(supplied), digest(expectedToken));
   if (!matches) {
-    throw new ExitHttpError(401, "Relay authentication failed", "authentication_error");
+    throw new ExitAuthenticationError();
   }
 }
