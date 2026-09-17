@@ -103,7 +103,8 @@ Start Exit:
 SHALLOT_LOG_LEVEL=debug \
 EXIT_PRIVATE_KEY="$(<.shallot/keys/exit-private.key)" \
 EXIT_RELAY_TOKEN=relay-to-exit-local \
-EXIT_PROVIDER_API_KEY=provider-local \
+LLM_PROVIDER_URL=http://127.0.0.1:8785/v1/chat/completions \
+LLM_PROVIDER_API_KEY=provider-local \
 bun packages/exit/src/main.ts
 ```
 

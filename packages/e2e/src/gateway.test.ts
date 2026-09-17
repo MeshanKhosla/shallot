@@ -2,7 +2,11 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { generateKeyPairSync } from "node:crypto";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { createSidecarServer } from "@shallot/client";
-import { createExitServer, MemoryReplayCache } from "@shallot/exit";
+import {
+  createExitServer,
+  MemoryReplayCache,
+  OpenAICompatibleProvider,
+} from "@shallot/exit";
 import {
   createMockProviderServer,
   type ProviderObservation,
@@ -51,22 +55,26 @@ function setupGateway() {
     port: 0,
     relayToken: EXIT_TOKEN,
     privateKeys: new Map([["test-key", exitKeys.privateKey]]),
-    providerUrl: new URL(`http://127.0.0.1:${provider.port}/v1/chat/completions`),
-    providerApiKey: PROVIDER_TOKEN,
-    allowedModels: new Set([
-      "mock-text",
-      "mock-stream",
-      "mock-tool",
-      "mock-json",
-      "mock-error",
-    ]),
+    llm: {
+      provider: new OpenAICompatibleProvider({
+        url: new URL(`http://127.0.0.1:${provider.port}/v1/chat/completions`),
+        apiKey: PROVIDER_TOKEN,
+        timeoutMs: 5_000,
+        fetch,
+      }),
+      allowedModels: new Set([
+        "mock-text",
+        "mock-stream",
+        "mock-tool",
+        "mock-json",
+        "mock-error",
+      ]),
+      maxResponseBytes: 256 * 1024,
+    },
     maxEnvelopeBytes: 256 * 1024,
     responsePaddingBytes: 512,
     responseFlushMs: 1,
-    maxProviderResponseBytes: 256 * 1024,
-    providerTimeoutMs: 5_000,
     replayCache: new MemoryReplayCache(60_000),
-    fetch,
   });
   servers.push(exit);
 

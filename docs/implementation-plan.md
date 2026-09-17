@@ -230,7 +230,9 @@ src/
   relay-auth.ts         Relay service authentication
   request-opener.ts     Envelope validation, replay check, and HPKE open
   sanitize-request.ts   OpenAI request schema and identifier removal
-  provider-client.ts    Fixed-destination provider HTTP client
+  llm-config.ts                LLM environment and adapter composition
+  llm-provider.ts              Provider interface used by Exit
+  openai-compatible-provider.ts  OpenAI-compatible HTTP adapter
   response-sealer.ts    Status record, padding, and encrypted frames
   replay-cache.ts       Replay-cache interface and local implementation
   errors.ts             Encrypted and pre-decryption errors

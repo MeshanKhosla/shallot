@@ -9,9 +9,8 @@ import {
   type SealedRequest,
 } from "@shallot/protocol";
 import type { Server } from "bun";
-import { type ExitConfig, loadConfig } from "./config.ts";
+import type { ExitConfig } from "./config.ts";
 import { ExitHttpError, exitErrorResponse } from "./errors.ts";
-import { callProvider } from "./provider-client.ts";
 import { ReplayCacheCapacityError } from "./replay-cache.ts";
 import { sealProviderResponse } from "./response-sealer.ts";
 import { sanitizeChatRequest } from "./sanitize-request.ts";
@@ -48,7 +47,7 @@ function encryptedError(error: unknown): Response {
   );
 }
 
-export function createExitServer(config: ExitConfig = loadConfig()): Server<undefined> {
+export function createExitServer(config: ExitConfig): Server<undefined> {
   const logger = createDebugLogger("exit");
 
   return Bun.serve({
@@ -93,7 +92,7 @@ export function createExitServer(config: ExitConfig = loadConfig()): Server<unde
         let sanitized: ReturnType<typeof sanitizeChatRequest>;
         try {
           const plaintext = JSON.parse(opened.payload.toString("utf8"));
-          sanitized = sanitizeChatRequest(plaintext, config.allowedModels);
+          sanitized = sanitizeChatRequest(plaintext, config.llm.allowedModels);
           logger.debug("request.decrypted", {
             tenantId: "unknown",
             requestId: envelope.requestId,
@@ -125,7 +124,10 @@ export function createExitServer(config: ExitConfig = loadConfig()): Server<unde
           throw error;
         }
 
-        const providerResponse = await callProvider(sanitized, config, req.signal);
+        const providerResponse = await config.llm.provider.complete(
+          sanitized,
+          req.signal,
+        );
 
         return await sealProviderResponse(
           providerResponse,

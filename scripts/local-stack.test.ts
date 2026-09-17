@@ -21,7 +21,8 @@ describe("local stack", () => {
     expect(byName.exit).toMatchObject({
       EXIT_PRIVATE_KEY: "private-key",
       EXIT_RELAY_TOKEN: "relay-to-exit-local",
-      EXIT_PROVIDER_URL: "http://127.0.0.1:8785/v1/chat/completions",
+      LLM_PROVIDER_URL: "http://127.0.0.1:8785/v1/chat/completions",
+      LLM_PROVIDER_API_KEY: "provider-local",
     });
     expect(byName.relay).toMatchObject({
       RELAY_TENANT_TOKENS: "demo:tenant-local",
@@ -44,7 +45,7 @@ describe("local stack", () => {
       services.map((service) => [service.name, service.environment]),
     );
 
-    expect(byName.exit?.EXIT_PROVIDER_URL).toBe(
+    expect(byName.exit?.LLM_PROVIDER_URL).toBe(
       "http://127.0.0.1:18885/v1/chat/completions",
     );
     expect(byName.relay?.RELAY_EXIT_URL).toBe(
@@ -53,6 +54,20 @@ describe("local stack", () => {
     expect(byName.sidecar?.SIDECAR_RELAY_URL).toBe(
       "http://127.0.0.1:18887/v1/chat/completions",
     );
+  });
+
+  test("uses a configured LLM provider instead of the local mock", () => {
+    const services = createLocalServices(KEYS, {
+      LLM_PROVIDER_URL: "https://llm.example/v1/chat/completions",
+      LLM_PROVIDER_API_KEY: "llm-secret",
+    });
+    const byName = Object.fromEntries(
+      services.map((service) => [service.name, service.environment]),
+    );
+
+    expect(byName.exit?.LLM_PROVIDER_URL).toBe("https://llm.example/v1/chat/completions");
+    expect(byName.exit?.LLM_PROVIDER_API_KEY).toBe("llm-secret");
+    expect(byName.provider?.MOCK_PROVIDER_API_KEY).toBe("provider-local");
   });
 
   test("assigns a stable inspector endpoint to each service", () => {

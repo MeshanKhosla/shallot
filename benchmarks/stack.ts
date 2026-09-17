@@ -135,9 +135,9 @@ export async function startBenchmarkStack(): Promise<BenchmarkStack> {
       EXIT_PRIVATE_KEY: privateKeyValue,
       EXIT_KEY_ID: "benchmark",
       EXIT_RELAY_TOKEN: RELAY_TOKEN,
-      EXIT_PROVIDER_URL: providerUrl,
-      EXIT_PROVIDER_API_KEY: PROVIDER_TOKEN,
-      EXIT_ALLOWED_MODELS: "mock-text",
+      LLM_PROVIDER_URL: providerUrl,
+      LLM_PROVIDER_API_KEY: PROVIDER_TOKEN,
+      LLM_ALLOWED_MODELS: "mock-text",
       EXIT_RESPONSE_PADDING_BYTES: "512",
       EXIT_RESPONSE_FLUSH_MS: "1",
     });

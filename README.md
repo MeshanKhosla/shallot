@@ -62,7 +62,8 @@ MOCK_PROVIDER_API_KEY=provider-local bun packages/mock-provider/src/main.ts
 ```sh
 EXIT_PRIVATE_KEY="$(<.shallot/keys/exit-private.key)" \
 EXIT_RELAY_TOKEN=relay-to-exit-local \
-EXIT_PROVIDER_API_KEY=provider-local \
+LLM_PROVIDER_URL=http://127.0.0.1:8785/v1/chat/completions \
+LLM_PROVIDER_API_KEY=provider-local \
 bun packages/exit/src/main.ts
 ```
 
@@ -76,6 +77,12 @@ bun packages/relay/src/main.ts
 SIDECAR_EXIT_PUBLIC_KEY="$(<.shallot/keys/exit-public.key)" \
 bun packages/client/src/main.ts
 ```
+
+Exit depends on an `LlmProvider` interface. The executable constructs the
+included OpenAI-compatible adapter from `LLM_PROVIDER_URL`,
+`LLM_PROVIDER_API_KEY`, `LLM_PROVIDER_TIMEOUT_MS`, `LLM_ALLOWED_MODELS`, and
+`LLM_MAX_RESPONSE_BYTES`. The local stack points that adapter at the mock
+provider by default; setting `LLM_PROVIDER_URL` replaces that destination.
 
 Point an OpenAI-compatible AI SDK provider at the sidecar:
 

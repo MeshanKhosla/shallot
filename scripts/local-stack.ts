@@ -81,12 +81,15 @@ export function createLocalServices(
   const providerPort = environment.MOCK_PROVIDER_PORT ?? "8785";
   const exitPort = environment.EXIT_PORT ?? "8786";
   const relayPort = environment.RELAY_PORT ?? "8787";
-  const providerToken =
-    environment.EXIT_PROVIDER_API_KEY ??
-    environment.MOCK_PROVIDER_API_KEY ??
-    "provider-local";
+  const mockProviderToken = environment.MOCK_PROVIDER_API_KEY ?? "provider-local";
   const relayToken =
     environment.EXIT_RELAY_TOKEN ?? environment.RELAY_EXIT_TOKEN ?? "relay-to-exit-local";
+  const llmProviderUrl =
+    environment.LLM_PROVIDER_URL ??
+    `http://127.0.0.1:${providerPort}/v1/chat/completions`;
+  const llmProviderApiKey =
+    environment.LLM_PROVIDER_API_KEY ??
+    (environment.LLM_PROVIDER_URL === undefined ? mockProviderToken : undefined);
   const common = {
     ...environment,
     SHALLOT_LOG_LEVEL: environment.SHALLOT_LOG_LEVEL ?? "debug",
@@ -98,7 +101,7 @@ export function createLocalServices(
       entrypoint: "packages/mock-provider/src/main.ts",
       environment: {
         ...common,
-        MOCK_PROVIDER_API_KEY: providerToken,
+        MOCK_PROVIDER_API_KEY: mockProviderToken,
       },
     },
     {
@@ -108,10 +111,8 @@ export function createLocalServices(
         ...common,
         EXIT_PRIVATE_KEY: keys.privateKey,
         EXIT_RELAY_TOKEN: relayToken,
-        EXIT_PROVIDER_API_KEY: providerToken,
-        EXIT_PROVIDER_URL:
-          environment.EXIT_PROVIDER_URL ??
-          `http://127.0.0.1:${providerPort}/v1/chat/completions`,
+        LLM_PROVIDER_URL: llmProviderUrl,
+        LLM_PROVIDER_API_KEY: llmProviderApiKey,
       },
     },
     {
