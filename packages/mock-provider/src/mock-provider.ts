@@ -88,8 +88,6 @@ export function createMockProviderServer(
       const program = handleMockProviderRequest(req, config, logger, hooks).pipe(
         Effect.catch((error) => Effect.succeed(providerErrorResponse(error))),
         Effect.catchCause(recoverDefect("mock-provider", providerDefectResponse)),
-        Effect.annotateLogs({ component: "mock-provider" }),
-        Effect.withSpan("mock-provider.request"),
       );
       return runtime
         .runPromise(program, { signal: req.signal })

@@ -128,8 +128,6 @@ export function createSidecarServer(
       const program = handleSidecarRequest(req, config, logger).pipe(
         Effect.catch((error) => Effect.succeed(sidecarErrorResponse(error))),
         Effect.catchCause(recoverDefect("sidecar", sidecarDefectResponse)),
-        Effect.annotateLogs({ component: "sidecar" }),
-        Effect.withSpan("sidecar.request"),
       );
       return runtime
         .runPromise(program, { signal: req.signal })

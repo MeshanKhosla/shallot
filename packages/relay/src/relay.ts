@@ -220,8 +220,6 @@ export function createRelayServer(
       const program = handleRelayRequest(req, config, logger, hooks).pipe(
         Effect.catch((error) => Effect.succeed(relayErrorResponse(error))),
         Effect.catchCause(recoverDefect("relay", relayDefectResponse)),
-        Effect.annotateLogs({ component: "relay" }),
-        Effect.withSpan("relay.request"),
       );
       return runtime
         .runPromise(program, { signal: req.signal })

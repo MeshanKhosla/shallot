@@ -189,8 +189,6 @@ export function createExitServer(
       const program = handleExitRequest(req, config, logger).pipe(
         Effect.catch((error) => Effect.succeed(exitErrorResponse(error))),
         Effect.catchCause(recoverDefect("exit", exitDefectResponse)),
-        Effect.annotateLogs({ component: "exit" }),
-        Effect.withSpan("exit.request"),
       );
       return runtime
         .runPromise(program, { signal: req.signal })

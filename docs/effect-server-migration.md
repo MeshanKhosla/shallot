@@ -109,12 +109,16 @@ bodies, and return Relay concurrency permits exactly once.
 
 ## Logging
 
-Request Effects annotate logs and spans with the component and request ID after
-that ID is available. The existing privacy-aware debug logger remains the sink
-because its views enforce the current trust boundaries. Relay annotations may
-contain tenant identity but never plaintext. Exit annotations may contain the
-request ID and plaintext debug view but never tenant identity. No trace context
-is forwarded between Relay and Exit.
+The existing privacy-aware debug logger remains the request log sink because its
+views enforce the current trust boundaries. Relay debug records may contain
+tenant identity but never plaintext. Exit debug records may contain request
+content but never tenant identity. No trace context is forwarded between Relay
+and Exit.
+
+The request programs do not add Effect log annotations or spans. Those records
+had no configured sink and added work without changing the current debug logs.
+Effect tracing belongs in a later change with a real backend and an explicit
+policy for the metadata each machine may export.
 
 ## Intentionally outside Effect
 
