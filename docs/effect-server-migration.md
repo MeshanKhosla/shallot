@@ -72,12 +72,14 @@ AI SDK disconnect
 ```
 
 `Effect.tryPromise` receives the fiber's `AbortSignal`, so interrupting a
-request aborts the matching downstream fetch. Provider and service timeouts use
-`Effect.timeout`, which interrupts the fetch and can run under a test clock.
-Stream adapters stay pull-based to preserve Web Stream backpressure. Their
-readers use scoped or explicit finalizers so success, failure, and downstream
-cancellation release locks, cancel unfinished upstream bodies, and return
-Relay concurrency permits exactly once.
+request aborts the matching downstream fetch. Provider and service fetches
+combine that signal with the client signal and an injected timeout signal. The
+timeout stays attached after response headers arrive, which preserves the
+existing limit across streamed response bodies. Tests control the timeout with
+an injected `AbortController`. Stream adapters stay pull-based to preserve Web
+Stream backpressure. Their readers use explicit finalizers so success, failure,
+and downstream cancellation release locks, cancel unfinished upstream bodies,
+and return Relay concurrency permits exactly once.
 
 ## Logging
 

@@ -23,6 +23,16 @@ The end-to-end tests use the real `ai` and `@ai-sdk/openai-compatible` packages 
 bun run test:e2e
 ```
 
+The Sidecar, Relay, Exit, and mock provider run request programs on Effect 4 RC.
+Each process builds one managed runtime and reuses it across requests. Bun still
+owns the HTTP socket, and Fetch requests, responses, abort signals, and Web
+Streams remain the network boundary. Expected operational failures are tagged
+and translated once at that boundary. Server shutdown interrupts active Effect
+fibers and disposes the runtime.
+
+The protocol package has no Effect dependency. Its HPKE operations, wire
+validators, padding, framing, and bounded body reader remain independent.
+
 ## Run the local stack
 
 Start all four services with local development credentials and readable debug
