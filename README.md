@@ -25,6 +25,16 @@ bun run test:e2e
 
 ## Run the local stack
 
+Start all four services with local development credentials and pretty debug logs:
+
+```sh
+bun run dev:local
+```
+
+The command creates `.shallot/keys` when needed and stops every service when it
+receives Ctrl-C. The individual commands are below for debugging one process at a
+time.
+
 Generate an X25519 Exit key pair. The private file is created with mode `0600`, is ignored by Git, and is never printed.
 
 ```sh
