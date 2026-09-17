@@ -13,7 +13,7 @@ import {
   type SealedFrame,
 } from "@shallot/protocol";
 import type { SidecarConfig } from "./config.ts";
-import { SidecarHttpError } from "./errors.ts";
+import { MalformedEncryptedResponse } from "./errors.ts";
 
 function parseFrame(line: string): SealedFrame {
   let value: unknown;
@@ -214,11 +214,7 @@ export async function createStreamingResponse(
       logger,
     );
   } catch {
-    throw new SidecarHttpError(
-      502,
-      "Relay returned an invalid encrypted response",
-      "upstream_error",
-    );
+    throw new MalformedEncryptedResponse();
   }
 
   const stream = new ReadableStream<Uint8Array>({
@@ -274,11 +270,7 @@ export async function createBufferedResponse(
       totalLength += chunk.byteLength;
     }
   } catch {
-    throw new SidecarHttpError(
-      502,
-      "Relay returned an invalid encrypted response",
-      "upstream_error",
-    );
+    throw new MalformedEncryptedResponse();
   }
 
   const responseBody = new Uint8Array(totalLength);

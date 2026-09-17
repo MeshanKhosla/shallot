@@ -1,6 +1,12 @@
 import { SEALED_STREAM_CONTENT_TYPE, type SealedRequest } from "@shallot/protocol";
+import { Context, Effect, Layer } from "effect";
 import type { SidecarConfig } from "./config.ts";
-import { SidecarHttpError } from "./errors.ts";
+import {
+  RelayEmptyResponse,
+  RelayRejected,
+  RelayTimeout,
+  RelayTransportFailure,
+} from "./errors.ts";
 
 function relayHeaders(req: Request): Headers {
   const headers = new Headers({
@@ -13,38 +19,53 @@ function relayHeaders(req: Request): Headers {
   return headers;
 }
 
-export async function forwardToRelay(
-  req: Request,
-  envelope: SealedRequest,
-  config: SidecarConfig,
-): Promise<ReadableStream<Uint8Array>> {
-  let response: Response;
-  try {
-    const signal = AbortSignal.any([
-      req.signal,
-      AbortSignal.timeout(config.relayTimeoutMs),
-    ]);
-    response = await fetch(config.relayUrl, {
-      method: "POST",
-      headers: relayHeaders(req),
-      body: JSON.stringify(envelope),
-      signal,
-    });
-  } catch {
-    throw new SidecarHttpError(502, "Relay is unavailable", "upstream_connection_error");
-  }
+export type RelayClientError =
+  | RelayTimeout
+  | RelayTransportFailure
+  | RelayRejected
+  | RelayEmptyResponse;
 
-  if (!response.ok) {
-    await response.body?.cancel().catch(() => undefined);
-    throw new SidecarHttpError(
-      response.status,
-      `Relay rejected the request with status ${response.status}`,
-      "upstream_error",
-    );
+export class RelayClient extends Context.Service<
+  RelayClient,
+  {
+    forward(
+      request: Request,
+      envelope: SealedRequest,
+    ): Effect.Effect<ReadableStream<Uint8Array>, RelayClientError>;
   }
-  if (!response.body) {
-    throw new SidecarHttpError(502, "Relay returned an empty response", "upstream_error");
-  }
+>()("@shallot/client/RelayClient") {}
 
-  return response.body;
+export function relayClientLayer(config: SidecarConfig): Layer.Layer<RelayClient> {
+  const relayFetch = config.fetch ?? fetch;
+  const timeoutSignal = config.relayTimeoutSignal ?? AbortSignal.timeout;
+
+  return Layer.succeed(RelayClient, {
+    forward: (request, envelope) =>
+      Effect.gen(function* () {
+        const timeout = timeoutSignal(config.relayTimeoutMs);
+        const response = yield* Effect.tryPromise({
+          try: (effectSignal) =>
+            relayFetch(config.relayUrl, {
+              method: "POST",
+              headers: relayHeaders(request),
+              body: JSON.stringify(envelope),
+              signal: AbortSignal.any([request.signal, effectSignal, timeout]),
+            }),
+          catch: () =>
+            timeout.aborted && !request.signal.aborted
+              ? new RelayTimeout()
+              : new RelayTransportFailure(),
+        });
+
+        if (!response.ok) {
+          yield* Effect.promise(async () => {
+            await response.body?.cancel().catch(() => undefined);
+          });
+          return yield* new RelayRejected({ status: response.status });
+        }
+        if (!response.body) return yield* new RelayEmptyResponse();
+
+        return response.body;
+      }),
+  });
 }

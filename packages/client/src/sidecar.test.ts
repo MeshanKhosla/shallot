@@ -11,10 +11,12 @@ import type { SidecarConfig } from "./config.ts";
 import { createBufferedResponse, createStreamingResponse } from "./response.ts";
 import { createSidecarServer } from "./sidecar.ts";
 
-const servers: Array<{ stop(closeActiveConnections?: boolean): void }> = [];
+const servers: Array<{
+  stop(closeActiveConnections?: boolean): void | Promise<void>;
+}> = [];
 
-afterEach(() => {
-  for (const server of servers.splice(0)) server.stop(true);
+afterEach(async () => {
+  await Promise.all(servers.splice(0).map((server) => server.stop(true)));
 });
 
 type ResponseLimits = Pick<
@@ -350,5 +352,91 @@ describe("sidecar", () => {
       ),
     ).rejects.toThrow("invalid encrypted response");
     expect(cancelled).toBeTrue();
+  });
+
+  test("cancels the Relay request when an HTTP streaming client stops", async () => {
+    const exitKeys = generateKeyPairSync("x25519");
+    let relayCancelled = false;
+    let resolveCancellation: (() => void) | undefined;
+    const cancellation = new Promise<void>((resolve) => {
+      resolveCancellation = resolve;
+    });
+    const relay = Bun.serve({
+      port: 0,
+      async fetch(req) {
+        const envelope = parseSealedRequest(await req.json());
+        const opened = await openRequest(envelope, exitKeys.privateKey);
+        const sealer = await createResponseSealer(
+          opened.responsePublicKey,
+          envelope.requestId,
+        );
+        const head = await sealer.sealFrame(
+          encodeResponseHead({
+            status: 200,
+            contentType: "text/event-stream; charset=utf-8",
+          }),
+          0,
+          "head",
+          false,
+          256,
+        );
+        const data = await sealer.sealFrame(
+          Buffer.from('data: {"choices":[]}\n\n'),
+          1,
+          "data",
+          false,
+          256,
+        );
+        return new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.enqueue(
+                Buffer.from(`${JSON.stringify(head)}\n${JSON.stringify(data)}\n`),
+              );
+            },
+            cancel() {
+              relayCancelled = true;
+              resolveCancellation?.();
+            },
+          }),
+        );
+      },
+    });
+    servers.push(relay);
+    const sidecar = createSidecarServer({
+      hostname: "127.0.0.1",
+      port: 0,
+      relayUrl: new URL(`http://127.0.0.1:${relay.port}/v1/chat/completions`),
+      exitPublicKey: exitKeys.publicKey,
+      exitKeyId: "local",
+      requestPaddingBytes: 1024,
+      maxRequestBytes: 64 * 1024,
+      relayTimeoutMs: 1_000,
+      maxResponseLineBytes: 64 * 1024,
+      maxResponseFrames: 100,
+      maxResponseBytes: 64 * 1024,
+    });
+    servers.push(sidecar);
+
+    const response = await fetch(`http://127.0.0.1:${sidecar.port}/v1/chat/completions`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        model: "example-model",
+        messages: [{ role: "user", content: "secret prompt" }],
+        stream: true,
+      }),
+    });
+    const reader = response.body?.getReader();
+    expect((await reader?.read())?.done).toBeFalse();
+    await reader?.cancel("client stopped");
+
+    expect(
+      await Promise.race([
+        cancellation.then(() => "cancelled" as const),
+        Bun.sleep(100).then(() => "timed out" as const),
+      ]),
+    ).toBe("cancelled");
+    expect(relayCancelled).toBeTrue();
   });
 });
