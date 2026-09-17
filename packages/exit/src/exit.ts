@@ -8,6 +8,7 @@ import {
   readLimitedBody,
   type SealedRequest,
 } from "@shallot/protocol";
+import { recoverDefect } from "@shallot/server-runtime";
 import type { Server } from "bun";
 import { Effect, Layer, ManagedRuntime } from "effect";
 import type { ExitConfig } from "./config.ts";
@@ -197,12 +198,13 @@ export function createExitServer(
     fetch(req) {
       const program = handleExitRequest(req, config, logger).pipe(
         Effect.catch((error) => Effect.succeed(exitErrorResponse(error))),
+        Effect.catchCause(recoverDefect("exit", exitDefectResponse)),
         Effect.annotateLogs({ component: "exit" }),
         Effect.withSpan("exit.request"),
       );
       return runtime
         .runPromise(program, { signal: req.signal })
-        .catch(() => exitDefectResponse());
+        .catch(exitDefectResponse);
     },
   });
   stopWithRuntime(server, runtime);

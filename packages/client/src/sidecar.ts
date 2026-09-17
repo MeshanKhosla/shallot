@@ -1,5 +1,6 @@
 import { createDebugLogger, formatCiphertextPreview } from "@shallot/observability";
 import { PATHS, sealRequest } from "@shallot/protocol";
+import { recoverDefect } from "@shallot/server-runtime";
 import type { Server } from "bun";
 import { Effect, type Layer, ManagedRuntime } from "effect";
 import { readChatRequest } from "./chat-request.ts";
@@ -136,12 +137,13 @@ export function createSidecarServer(
     fetch(req) {
       const program = handleSidecarRequest(req, config, logger).pipe(
         Effect.catch((error) => Effect.succeed(sidecarErrorResponse(error))),
+        Effect.catchCause(recoverDefect("sidecar", sidecarDefectResponse)),
         Effect.annotateLogs({ component: "sidecar" }),
         Effect.withSpan("sidecar.request"),
       );
       return runtime
         .runPromise(program, { signal: req.signal })
-        .catch(() => sidecarDefectResponse());
+        .catch(sidecarDefectResponse);
     },
   });
   stopWithRuntime(server, runtime);

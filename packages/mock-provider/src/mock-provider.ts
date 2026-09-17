@@ -1,4 +1,5 @@
 import { createDebugLogger, formatBodyForDebug } from "@shallot/observability";
+import { recoverDefect } from "@shallot/server-runtime";
 import type { Server } from "bun";
 import { Effect, Layer, ManagedRuntime } from "effect";
 import { loadConfig, type MockProviderConfig } from "./config.ts";
@@ -96,12 +97,13 @@ export function createMockProviderServer(
     fetch(req) {
       const program = handleMockProviderRequest(req, config, logger, hooks).pipe(
         Effect.catch((error) => Effect.succeed(providerErrorResponse(error))),
+        Effect.catchCause(recoverDefect("mock-provider", providerDefectResponse)),
         Effect.annotateLogs({ component: "mock-provider" }),
         Effect.withSpan("mock-provider.request"),
       );
       return runtime
         .runPromise(program, { signal: req.signal })
-        .catch(() => providerDefectResponse());
+        .catch(providerDefectResponse);
     },
   });
   stopWithRuntime(server, runtime);

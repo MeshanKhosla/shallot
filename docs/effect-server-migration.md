@@ -61,8 +61,11 @@ Request programs return Fetch `Response` values. Expected failures stay in the
 typed error channel until one HTTP translation function converts them to the
 existing status, public message, and OpenAI-compatible error type. A defect is
 converted only at that outer boundary and always uses the component's generic
-500 response. Internal causes, ciphertext validation details, plaintext,
-credentials, and keys never enter public errors.
+500 response. The server records a random incident ID, component name, and
+`request.defect` event before returning that response. The diagnostic reporter
+never receives the cause object, so exception messages, ciphertext validation
+details, plaintext, credentials, and keys cannot enter the default defect log.
+Request interruption is not reported as a defect.
 
 ## Error taxonomy
 

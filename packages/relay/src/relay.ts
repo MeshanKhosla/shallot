@@ -7,6 +7,7 @@ import {
   SEALED_STREAM_CONTENT_TYPE,
   type SealedRequest,
 } from "@shallot/protocol";
+import { recoverDefect } from "@shallot/server-runtime";
 import type { Server } from "bun";
 import { Effect, Layer, ManagedRuntime } from "effect";
 import {
@@ -228,12 +229,13 @@ export function createRelayServer(
     fetch(req) {
       const program = handleRelayRequest(req, config, logger, hooks).pipe(
         Effect.catch((error) => Effect.succeed(relayErrorResponse(error))),
+        Effect.catchCause(recoverDefect("relay", relayDefectResponse)),
         Effect.annotateLogs({ component: "relay" }),
         Effect.withSpan("relay.request"),
       );
       return runtime
         .runPromise(program, { signal: req.signal })
-        .catch(() => relayDefectResponse());
+        .catch(relayDefectResponse);
     },
   });
   stopWithRuntime(server, runtime);

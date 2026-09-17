@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@shallot/observability": "workspace:*",
+    "@shallot/server-runtime": "workspace:*",
     "effect": "4.0.0-rc.115"
   },
   "devDependencies": {}

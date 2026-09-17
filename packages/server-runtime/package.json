@@ -1,5 +1,5 @@
 {
-  "name": "@shallot/relay",
+  "name": "@shallot/server-runtime",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -11,14 +11,9 @@
     "src"
   ],
   "scripts": {
-    "dev": "bun --watch src/main.ts",
-    "start": "bun src/main.ts",
     "test": "bun test"
   },
   "dependencies": {
-    "@shallot/observability": "workspace:*",
-    "@shallot/protocol": "workspace:*",
-    "@shallot/server-runtime": "workspace:*",
     "effect": "4.0.0-rc.115"
   },
   "devDependencies": {}

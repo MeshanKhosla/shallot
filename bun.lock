@@ -17,6 +17,7 @@
       "dependencies": {
         "@shallot/observability": "workspace:*",
         "@shallot/protocol": "workspace:*",
+        "@shallot/server-runtime": "workspace:*",
         "effect": "4.0.0-rc.115",
       },
     },
@@ -39,6 +40,7 @@
       "dependencies": {
         "@shallot/observability": "workspace:*",
         "@shallot/protocol": "workspace:*",
+        "@shallot/server-runtime": "workspace:*",
         "effect": "4.0.0-rc.115",
       },
     },
@@ -47,6 +49,7 @@
       "version": "0.1.0",
       "dependencies": {
         "@shallot/observability": "workspace:*",
+        "@shallot/server-runtime": "workspace:*",
         "effect": "4.0.0-rc.115",
       },
     },
@@ -67,6 +70,14 @@
       "dependencies": {
         "@shallot/observability": "workspace:*",
         "@shallot/protocol": "workspace:*",
+        "@shallot/server-runtime": "workspace:*",
+        "effect": "4.0.0-rc.115",
+      },
+    },
+    "packages/server-runtime": {
+      "name": "@shallot/server-runtime",
+      "version": "0.1.0",
+      "dependencies": {
         "effect": "4.0.0-rc.115",
       },
     },
@@ -115,6 +126,8 @@
     "@shallot/protocol": ["@shallot/protocol@workspace:packages/protocol"],
 
     "@shallot/relay": ["@shallot/relay@workspace:packages/relay"],
+
+    "@shallot/server-runtime": ["@shallot/server-runtime@workspace:packages/server-runtime"],
 
     "@standard-schema/spec": ["@standard-schema/spec@1.1.0", "", {}, "sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w=="],
 
