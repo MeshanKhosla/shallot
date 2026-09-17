@@ -1,5 +1,5 @@
 import { createDebugLogger, formatBodyForDebug } from "@shallot/observability";
-import { recoverDefect } from "@shallot/server-runtime";
+import { bindRuntimeLifecycle, recoverDefect } from "@shallot/server-runtime";
 import type { Server } from "bun";
 import { Effect, Layer, ManagedRuntime } from "effect";
 import { loadConfig, type MockProviderConfig } from "./config.ts";
@@ -74,16 +74,6 @@ export const handleMockProviderRequest = Effect.fn("handleMockProviderRequest")(
   },
 );
 
-function stopWithRuntime(
-  server: Server<undefined>,
-  runtime: ManagedRuntime.ManagedRuntime<never, never>,
-): void {
-  const stop = server.stop.bind(server);
-  server.stop = async (closeActiveConnections?: boolean) => {
-    await Promise.all([stop(closeActiveConnections), runtime.dispose()]);
-  };
-}
-
 export function createMockProviderServer(
   config: MockProviderConfig = loadConfig(),
   hooks: MockProviderHooks = {},
@@ -106,6 +96,5 @@ export function createMockProviderServer(
         .catch(providerDefectResponse);
     },
   });
-  stopWithRuntime(server, runtime);
-  return server;
+  return bindRuntimeLifecycle(server, runtime);
 }

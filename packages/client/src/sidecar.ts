@@ -1,6 +1,6 @@
 import { createDebugLogger, formatCiphertextPreview } from "@shallot/observability";
 import { PATHS, sealRequest } from "@shallot/protocol";
-import { recoverDefect } from "@shallot/server-runtime";
+import { bindRuntimeLifecycle, recoverDefect } from "@shallot/server-runtime";
 import type { Server } from "bun";
 import { Effect, type Layer, ManagedRuntime } from "effect";
 import { readChatRequest } from "./chat-request.ts";
@@ -107,16 +107,6 @@ export const handleSidecarRequest = Effect.fn("handleSidecarRequest")(function* 
   );
 });
 
-function stopWithRuntime(
-  server: Server<undefined>,
-  runtime: ManagedRuntime.ManagedRuntime<RelayClient, never>,
-): void {
-  const stop = server.stop.bind(server);
-  server.stop = async (closeActiveConnections?: boolean) => {
-    await Promise.all([stop(closeActiveConnections), runtime.dispose()]);
-  };
-}
-
 export function sidecarLive(config: SidecarConfig): Layer.Layer<RelayClient> {
   return relayClientLayer({
     url: config.relayUrl,
@@ -146,6 +136,5 @@ export function createSidecarServer(
         .catch(sidecarDefectResponse);
     },
   });
-  stopWithRuntime(server, runtime);
-  return server;
+  return bindRuntimeLifecycle(server, runtime);
 }

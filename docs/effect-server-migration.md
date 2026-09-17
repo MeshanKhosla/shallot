@@ -37,8 +37,10 @@ service dependencies.
 
 Each `create*Server` function builds one `ManagedRuntime` and reuses it for all
 requests. The Bun `fetch` callback runs one request Effect with the incoming
-request signal. Server shutdown disposes the runtime so its fibers and scoped
-resources are interrupted before the Bun server finishes stopping.
+request signal. A shared, idempotent lifecycle helper stops the Bun server and
+then disposes the runtime. It still attempts runtime disposal if Bun shutdown
+fails. Signal handlers await that sequence and record a controlled
+`shutdown.failed` event if disposal fails.
 
 ```text
 Bun HTTP adapter

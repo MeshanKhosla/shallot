@@ -7,7 +7,7 @@ import {
   SEALED_STREAM_CONTENT_TYPE,
   type SealedRequest,
 } from "@shallot/protocol";
-import { recoverDefect } from "@shallot/server-runtime";
+import { bindRuntimeLifecycle, recoverDefect } from "@shallot/server-runtime";
 import type { Server } from "bun";
 import { Effect, Layer, ManagedRuntime } from "effect";
 import {
@@ -205,16 +205,6 @@ export function relayLive(config: RelayConfig): Layer.Layer<RelayServices> {
   );
 }
 
-function stopWithRuntime(
-  server: Server<undefined>,
-  runtime: ManagedRuntime.ManagedRuntime<RelayServices, never>,
-): void {
-  const stop = server.stop.bind(server);
-  server.stop = async (closeActiveConnections?: boolean) => {
-    await Promise.all([stop(closeActiveConnections), runtime.dispose()]);
-  };
-}
-
 export function createRelayServer(
   config: RelayConfig = loadConfig(),
   services: Layer.Layer<RelayServices> = relayLive(config),
@@ -238,6 +228,5 @@ export function createRelayServer(
         .catch(relayDefectResponse);
     },
   });
-  stopWithRuntime(server, runtime);
-  return server;
+  return bindRuntimeLifecycle(server, runtime);
 }

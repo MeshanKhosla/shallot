@@ -8,7 +8,7 @@ import {
   readLimitedBody,
   type SealedRequest,
 } from "@shallot/protocol";
-import { recoverDefect } from "@shallot/server-runtime";
+import { bindRuntimeLifecycle, recoverDefect } from "@shallot/server-runtime";
 import type { Server } from "bun";
 import { Effect, Layer, ManagedRuntime } from "effect";
 import type { ExitConfig } from "./config.ts";
@@ -160,16 +160,6 @@ export const handleExitRequest = Effect.fn("handleExitRequest")(function* (
   );
 });
 
-function stopWithRuntime(
-  server: Server<undefined>,
-  runtime: ManagedRuntime.ManagedRuntime<LlmProvider | ReplayProtection, never>,
-): void {
-  const stop = server.stop.bind(server);
-  server.stop = async (closeActiveConnections?: boolean) => {
-    await Promise.all([stop(closeActiveConnections), runtime.dispose()]);
-  };
-}
-
 export type ExitServices = LlmProvider | ReplayProtection;
 
 export function exitLive(config: ExitConfig): Layer.Layer<ExitServices> {
@@ -207,6 +197,5 @@ export function createExitServer(
         .catch(exitDefectResponse);
     },
   });
-  stopWithRuntime(server, runtime);
-  return server;
+  return bindRuntimeLifecycle(server, runtime);
 }
