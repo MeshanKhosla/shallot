@@ -1,44 +1,63 @@
 import { SEALED_STREAM_CONTENT_TYPE } from "@shallot/protocol";
+import { Context, Effect, Layer } from "effect";
 import type { RelayConfig } from "./config.ts";
-import { RelayHttpError } from "./errors.ts";
+import {
+  ExitEmptyResponse,
+  ExitRejected,
+  ExitTimeout,
+  ExitTransportFailure,
+} from "./errors.ts";
 
-export async function forwardToExit(
-  rawBody: string,
-  config: RelayConfig,
-  signal: AbortSignal,
-): Promise<ReadableStream<Uint8Array>> {
+export type ExitClientError =
+  | ExitTimeout
+  | ExitTransportFailure
+  | ExitRejected
+  | ExitEmptyResponse;
+
+export class ExitClient extends Context.Service<
+  ExitClient,
+  {
+    forward(
+      rawBody: string,
+      clientSignal: AbortSignal,
+    ): Effect.Effect<ReadableStream<Uint8Array>, ExitClientError>;
+  }
+>()("@shallot/relay/ExitClient") {}
+
+export function exitClientLayer(config: RelayConfig): Layer.Layer<ExitClient> {
   const headers = new Headers({
     accept: SEALED_STREAM_CONTENT_TYPE,
     authorization: `Bearer ${config.exitToken}`,
     "content-type": "application/json",
   });
+  const timeoutSignal = config.exitTimeoutSignal ?? AbortSignal.timeout;
 
-  let response: Response;
-  try {
-    const upstreamSignal = AbortSignal.any([
-      signal,
-      AbortSignal.timeout(config.exitTimeoutMs),
-    ]);
-    response = await config.fetch(config.exitUrl, {
-      method: "POST",
-      headers,
-      body: rawBody,
-      signal: upstreamSignal,
-    });
-  } catch {
-    throw new RelayHttpError(502, "Exit is unavailable", "upstream_connection_error");
-  }
+  return Layer.succeed(ExitClient, {
+    forward: (rawBody, clientSignal) =>
+      Effect.gen(function* () {
+        const timeout = timeoutSignal(config.exitTimeoutMs);
+        const response = yield* Effect.tryPromise({
+          try: (effectSignal) =>
+            config.fetch(config.exitUrl, {
+              method: "POST",
+              headers,
+              body: rawBody,
+              signal: AbortSignal.any([clientSignal, effectSignal, timeout]),
+            }),
+          catch: () =>
+            timeout.aborted && !clientSignal.aborted
+              ? new ExitTimeout()
+              : new ExitTransportFailure(),
+        });
 
-  if (!response.ok) {
-    await response.body?.cancel().catch(() => undefined);
-    throw new RelayHttpError(
-      response.status,
-      `Exit rejected the request with status ${response.status}`,
-      "upstream_error",
-    );
-  }
-  if (!response.body) {
-    throw new RelayHttpError(502, "Exit returned an empty response", "upstream_error");
-  }
-  return response.body;
+        if (!response.ok) {
+          yield* Effect.promise(async () => {
+            await response.body?.cancel().catch(() => undefined);
+          });
+          return yield* new ExitRejected({ status: response.status });
+        }
+        if (!response.body) return yield* new ExitEmptyResponse();
+        return response.body;
+      }),
+  });
 }

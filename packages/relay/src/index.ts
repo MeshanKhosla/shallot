@@ -2,11 +2,12 @@ export { loadConfig, type RelayConfig, type RelayObservation } from "./config.ts
 export { createRelayServer } from "./relay.ts";
 export {
   MemoryRequestTracker,
-  type RequestTracker,
-  RequestTrackerCapacityError,
+  RequestTracker,
+  type RequestTrackerService,
 } from "./request-tracker.ts";
 export {
   StaticTenantAuthenticator,
-  type TenantAuthenticator,
+  TenantAuthenticator,
+  type TenantAuthenticatorService,
   type TenantIdentity,
 } from "./tenant-auth.ts";

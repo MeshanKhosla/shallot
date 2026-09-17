@@ -1,5 +1,8 @@
-import { MemoryRequestTracker, type RequestTracker } from "./request-tracker.ts";
-import { StaticTenantAuthenticator, type TenantAuthenticator } from "./tenant-auth.ts";
+import { MemoryRequestTracker, type RequestTrackerService } from "./request-tracker.ts";
+import {
+  StaticTenantAuthenticator,
+  type TenantAuthenticatorService,
+} from "./tenant-auth.ts";
 
 export interface RelayObservation {
   tenantId: string;
@@ -8,17 +11,23 @@ export interface RelayObservation {
   forwardedHeaders: Headers;
 }
 
+export type RelayFetch = (
+  input: string | URL | Request,
+  init?: RequestInit,
+) => Promise<Response>;
+
 export interface RelayConfig {
   hostname: string;
   port: number;
   exitUrl: URL;
   exitToken: string;
-  authenticator: TenantAuthenticator;
-  requestTracker: RequestTracker;
+  authenticator: TenantAuthenticatorService;
+  requestTracker: RequestTrackerService;
   maxEnvelopeBytes: number;
   maxConcurrentRequests: number;
   exitTimeoutMs: number;
-  fetch: typeof fetch;
+  fetch: RelayFetch;
+  exitTimeoutSignal?: (timeoutMs: number) => AbortSignal;
   observe?: (observation: RelayObservation) => void;
   observeResponseChunk?: (chunk: Uint8Array) => void;
 }

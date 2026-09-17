@@ -1,13 +1,21 @@
 import { createHash, timingSafeEqual } from "node:crypto";
-import { RelayHttpError } from "./errors.ts";
+import { Context, Effect } from "effect";
+import { RelayAuthenticationError } from "./errors.ts";
 
 export interface TenantIdentity {
   id: string;
 }
 
-export interface TenantAuthenticator {
-  authenticate(authorization: string | null): TenantIdentity;
-}
+export class TenantAuthenticator extends Context.Service<
+  TenantAuthenticator,
+  {
+    authenticate(
+      authorization: string | null,
+    ): Effect.Effect<TenantIdentity, RelayAuthenticationError>;
+  }
+>()("@shallot/relay/TenantAuthenticator") {}
+
+export type TenantAuthenticatorService = TenantAuthenticator["Service"];
 
 interface TenantCredential {
   id: string;
@@ -18,7 +26,7 @@ function digest(value: string): Buffer {
   return createHash("sha256").update(value).digest();
 }
 
-export class StaticTenantAuthenticator implements TenantAuthenticator {
+export class StaticTenantAuthenticator implements TenantAuthenticatorService {
   private readonly credentials: TenantCredential[];
 
   constructor(tokens: ReadonlyMap<string, string>) {
@@ -31,25 +39,24 @@ export class StaticTenantAuthenticator implements TenantAuthenticator {
     }
   }
 
-  authenticate(authorization: string | null): TenantIdentity {
-    const supplied = authorization?.startsWith("Bearer ")
-      ? authorization.slice("Bearer ".length)
-      : "";
-    const suppliedDigest = digest(supplied);
-    let identity: TenantIdentity | undefined;
+  authenticate(
+    authorization: string | null,
+  ): Effect.Effect<TenantIdentity, RelayAuthenticationError> {
+    return Effect.suspend(() => {
+      const supplied = authorization?.startsWith("Bearer ")
+        ? authorization.slice("Bearer ".length)
+        : "";
+      const suppliedDigest = digest(supplied);
+      let identity: TenantIdentity | undefined;
 
-    for (const credential of this.credentials) {
-      if (timingSafeEqual(suppliedDigest, credential.tokenDigest)) {
-        identity = { id: credential.id };
+      for (const credential of this.credentials) {
+        if (timingSafeEqual(suppliedDigest, credential.tokenDigest)) {
+          identity = { id: credential.id };
+        }
       }
-    }
-    if (!identity) {
-      throw new RelayHttpError(
-        401,
-        "Tenant authentication failed",
-        "authentication_error",
-      );
-    }
-    return identity;
+      return identity
+        ? Effect.succeed(identity)
+        : Effect.fail(new RelayAuthenticationError());
+    });
   }
 }

@@ -1,10 +1,19 @@
-export interface RequestTracker {
-  claim(tenantId: string, requestId: string): boolean;
-}
+import { Context, Effect } from "effect";
+import { RelayTrackerCapacityExhausted } from "./errors.ts";
 
-export class RequestTrackerCapacityError extends Error {}
+export class RequestTracker extends Context.Service<
+  RequestTracker,
+  {
+    claim(
+      tenantId: string,
+      requestId: string,
+    ): Effect.Effect<boolean, RelayTrackerCapacityExhausted>;
+  }
+>()("@shallot/relay/RequestTracker") {}
 
-export class MemoryRequestTracker implements RequestTracker {
+export type RequestTrackerService = RequestTracker["Service"];
+
+export class MemoryRequestTracker implements RequestTrackerService {
   private readonly entries = new Map<string, { tenantId: string; expiresAt: number }>();
   private readonly tenantCounts = new Map<string, number>();
 
@@ -15,21 +24,26 @@ export class MemoryRequestTracker implements RequestTracker {
     private readonly maxEntriesPerTenant = 10_000,
   ) {}
 
-  claim(tenantId: string, requestId: string): boolean {
-    const now = this.now();
-    this.prune(now);
-    const key = `${tenantId}\0${requestId}`;
-    const entry = this.entries.get(key);
-    if (entry !== undefined && entry.expiresAt > now) return false;
-    if (
-      this.entries.size >= this.maxEntries ||
-      (this.tenantCounts.get(tenantId) ?? 0) >= this.maxEntriesPerTenant
-    ) {
-      throw new RequestTrackerCapacityError("Relay request tracker is full");
-    }
-    this.entries.set(key, { tenantId, expiresAt: now + this.ttlMs });
-    this.tenantCounts.set(tenantId, (this.tenantCounts.get(tenantId) ?? 0) + 1);
-    return true;
+  claim(
+    tenantId: string,
+    requestId: string,
+  ): Effect.Effect<boolean, RelayTrackerCapacityExhausted> {
+    return Effect.suspend(() => {
+      const now = this.now();
+      this.prune(now);
+      const key = `${tenantId}\0${requestId}`;
+      const entry = this.entries.get(key);
+      if (entry !== undefined && entry.expiresAt > now) return Effect.succeed(false);
+      if (
+        this.entries.size >= this.maxEntries ||
+        (this.tenantCounts.get(tenantId) ?? 0) >= this.maxEntriesPerTenant
+      ) {
+        return Effect.fail(new RelayTrackerCapacityExhausted());
+      }
+      this.entries.set(key, { tenantId, expiresAt: now + this.ttlMs });
+      this.tenantCounts.set(tenantId, (this.tenantCounts.get(tenantId) ?? 0) + 1);
+      return Effect.succeed(true);
+    });
   }
 
   private prune(now: number): void {
