@@ -5,7 +5,7 @@ import {
   formatBodyForDebug,
   formatCiphertextPreview,
   formatDebugEntry,
-} from "./index.ts";
+} from "../src/index.ts";
 
 describe("debug logger", () => {
   test("emits a structured component view when enabled", () => {

@@ -11,7 +11,7 @@ import {
   exitErrorResponse,
   ProviderTimeout,
   ProviderTransportFailure,
-} from "./errors.ts";
+} from "../src/errors.ts";
 
 describe("Exit error responses", () => {
   test.each([

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { createMockProviderServer } from "./mock-provider.ts";
+import { createMockProviderServer } from "../src/mock-provider.ts";
 
 const servers: Array<{
   stop(closeActiveConnections?: boolean): void | Promise<void>;

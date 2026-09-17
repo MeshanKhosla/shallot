@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { padPayload, unpadPayload } from "./padding.ts";
+import { padPayload, unpadPayload } from "../src/padding.ts";
 
 describe("payload padding", () => {
   for (const size of [0, 1, 251, 252, 253, 256, 511, 512]) {

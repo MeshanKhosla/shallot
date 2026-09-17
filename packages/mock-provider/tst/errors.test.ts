@@ -5,7 +5,7 @@ import {
   ProviderRouteNotFound,
   providerDefectResponse,
   providerErrorResponse,
-} from "./errors.ts";
+} from "../src/errors.ts";
 
 describe("Mock provider error responses", () => {
   test.each([

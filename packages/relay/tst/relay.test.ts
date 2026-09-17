@@ -2,12 +2,12 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { generateKeyPairSync } from "node:crypto";
 import { sealRequest } from "@shallot/protocol";
 import { Layer } from "effect";
-import { concurrencyLimiterLayer } from "./concurrency-limiter.ts";
-import type { RelayConfig } from "./config.ts";
-import { exitClientLayer, type RelayFetch } from "./exit-client.ts";
-import { createRelayServer } from "./relay.ts";
-import { requestTrackerLayer } from "./request-tracker.ts";
-import { tenantAuthenticatorLayer } from "./tenant-auth.ts";
+import { concurrencyLimiterLayer } from "../src/concurrency-limiter.ts";
+import type { RelayConfig } from "../src/config.ts";
+import { exitClientLayer, type RelayFetch } from "../src/exit-client.ts";
+import { createRelayServer } from "../src/relay.ts";
+import { requestTrackerLayer } from "../src/request-tracker.ts";
+import { tenantAuthenticatorLayer } from "../src/tenant-auth.ts";
 
 const servers: Array<{ stop(closeActiveConnections?: boolean): Promise<void> }> = [];
 

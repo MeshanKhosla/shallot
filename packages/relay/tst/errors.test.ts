@@ -13,7 +13,7 @@ import {
   RelayTrackerCapacityExhausted,
   relayDefectResponse,
   relayErrorResponse,
-} from "./errors.ts";
+} from "../src/errors.ts";
 
 describe("Relay error responses", () => {
   test.each([

@@ -5,7 +5,7 @@ import {
   type ExitClientDependencies,
   exitClientLayer,
   type RelayFetch,
-} from "./exit-client.ts";
+} from "../src/exit-client.ts";
 
 function dependencies(fetch: RelayFetch): ExitClientDependencies {
   return { fetch };

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { Cause, Effect } from "effect";
-import { type DefectDiagnostic, recoverDefect } from "./defects.ts";
+import { type DefectDiagnostic, recoverDefect } from "../src/defects.ts";
 
 describe("defect diagnostics", () => {
   test("records an incident without passing defect content to the reporter", async () => {

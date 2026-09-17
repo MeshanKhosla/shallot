@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import { Effect } from "effect";
-import { ConcurrencyLimiter, concurrencyLimiterLayer } from "./concurrency-limiter.ts";
+import {
+  ConcurrencyLimiter,
+  concurrencyLimiterLayer,
+} from "../src/concurrency-limiter.ts";
 
 describe("Relay concurrency limiter", () => {
   test("releases a permit exactly once", async () => {

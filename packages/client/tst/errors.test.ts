@@ -11,7 +11,7 @@ import {
   SidecarUnsupportedContentType,
   sidecarDefectResponse,
   sidecarErrorResponse,
-} from "./errors.ts";
+} from "../src/errors.ts";
 
 describe("Sidecar error responses", () => {
   test.each([

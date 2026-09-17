@@ -18,7 +18,7 @@
     "lint": "biome check .",
     "typecheck": "tsc --noEmit",
     "test": "bun test",
-    "test:e2e": "bun test packages/e2e/src/gateway.test.ts",
+    "test:e2e": "bun test packages/e2e/tst/gateway.test.ts",
     "check": "bun run lint && bun run typecheck && bun run test"
   },
   "devDependencies": {

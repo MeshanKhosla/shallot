@@ -2,11 +2,11 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { generateKeyPairSync, type KeyObject } from "node:crypto";
 import { sealRequest } from "@shallot/protocol";
 import { Effect, Layer } from "effect";
-import type { ExitConfig } from "./config.ts";
-import { createExitServer } from "./exit.ts";
-import { LlmProvider, type LlmProviderService } from "./llm-provider.ts";
-import { MemoryReplayCache, type ReplayCache } from "./replay-cache.ts";
-import { replayProtectionLayer } from "./replay-protection.ts";
+import type { ExitConfig } from "../src/config.ts";
+import { createExitServer } from "../src/exit.ts";
+import { LlmProvider, type LlmProviderService } from "../src/llm-provider.ts";
+import { MemoryReplayCache, type ReplayCache } from "../src/replay-cache.ts";
+import { replayProtectionLayer } from "../src/replay-protection.ts";
 
 const servers: Array<{ stop(closeActiveConnections?: boolean): Promise<void> }> = [];
 

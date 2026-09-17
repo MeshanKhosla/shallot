@@ -8,11 +8,11 @@ import {
   sealRequest,
 } from "@shallot/protocol";
 import { Effect, Layer } from "effect";
-import type { SidecarConfig } from "./config.ts";
-import { RelayRejected } from "./errors.ts";
-import { RelayClient } from "./relay.ts";
-import { createBufferedResponse, createStreamingResponse } from "./response.ts";
-import { createSidecarServer } from "./sidecar.ts";
+import type { SidecarConfig } from "../src/config.ts";
+import { RelayRejected } from "../src/errors.ts";
+import { RelayClient } from "../src/relay.ts";
+import { createBufferedResponse, createStreamingResponse } from "../src/response.ts";
+import { createSidecarServer } from "../src/sidecar.ts";
 
 const servers: Array<{
   stop(closeActiveConnections?: boolean): void | Promise<void>;

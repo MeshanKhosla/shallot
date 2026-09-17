@@ -2,13 +2,13 @@ import { describe, expect, test } from "bun:test";
 import { generateKeyPairSync } from "node:crypto";
 import { sealRequest } from "@shallot/protocol";
 import { Effect } from "effect";
-import type { SidecarConfig } from "./config.ts";
+import type { SidecarConfig } from "../src/config.ts";
 import {
   RelayClient,
   type RelayClientDependencies,
   relayClientLayer,
   type SidecarFetch,
-} from "./relay.ts";
+} from "../src/relay.ts";
 
 async function setup(fetch: SidecarFetch): Promise<{
   config: SidecarConfig;

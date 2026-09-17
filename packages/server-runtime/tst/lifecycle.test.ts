@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { Server } from "bun";
-import { bindRuntimeLifecycle, type DisposableRuntime } from "./lifecycle.ts";
+import { bindRuntimeLifecycle, type DisposableRuntime } from "../src/lifecycle.ts";
 
 function serverWithStop(stop: Server<undefined>["stop"]): Server<undefined> {
   return { stop } as Server<undefined>;
