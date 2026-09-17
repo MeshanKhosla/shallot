@@ -17,6 +17,7 @@
       "dependencies": {
         "@shallot/observability": "workspace:*",
         "@shallot/protocol": "workspace:*",
+        "effect": "4.0.0-rc.115",
       },
     },
     "packages/e2e": {
@@ -38,6 +39,7 @@
       "dependencies": {
         "@shallot/observability": "workspace:*",
         "@shallot/protocol": "workspace:*",
+        "effect": "4.0.0-rc.115",
       },
     },
     "packages/mock-provider": {
@@ -45,6 +47,7 @@
       "version": "0.1.0",
       "dependencies": {
         "@shallot/observability": "workspace:*",
+        "effect": "4.0.0-rc.115",
       },
     },
     "packages/observability": {
@@ -64,6 +67,7 @@
       "dependencies": {
         "@shallot/observability": "workspace:*",
         "@shallot/protocol": "workspace:*",
+        "effect": "4.0.0-rc.115",
       },
     },
   },
@@ -175,6 +179,8 @@
     "cliui": ["cliui@9.0.1", "", { "dependencies": { "string-width": "^7.2.0", "strip-ansi": "^7.1.0", "wrap-ansi": "^9.0.0" } }, "sha512-k7ndgKhwoQveBL+/1tqGJYNz097I7WOvwbmmU2AR5+magtbjPWQTS1C5vzGkBC8Ym8UWRzfKUzUUqFLypY4Q+w=="],
 
     "concurrently": ["concurrently@10.0.5", "", { "dependencies": { "chalk": "5.6.2", "rxjs": "7.8.2", "shell-quote": "1.9.0", "supports-color": "10.2.2", "tree-kill": "1.2.2", "yargs": "18.0.0" }, "bin": { "conc": "dist/bin/index.js", "concurrently": "dist/bin/index.js" } }, "sha512-JaP/CoftUrCcAFW/g//RbgEGwlelnEae6cfBLgH6ZdO6s8jPkn6p9SB9u6pdVxYXoiSnFqseOlHfrEfF82TVOg=="],
+
+    "effect": ["effect@4.0.0-rc.115", "", {}, "sha512-ogYulZ5ffeOzrJqQrG0XOkDO5lKn2s9KNHhoxJy/6wKUkF0i12dlVXWA9TgsgQ+zV/JzizyG0+XMPepZEQX6vw=="],
 
     "emoji-regex": ["emoji-regex@10.6.0", "", {}, "sha512-toUI84YS5YmxW219erniWD0CIVOo46xGKColeNQRgOzDorgBi1v4D71/OFzgD9GO2UGKIv1C3Sp8DAn0+j5w7A=="],
 

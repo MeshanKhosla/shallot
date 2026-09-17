@@ -16,7 +16,8 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@shallot/observability": "workspace:*"
+    "@shallot/observability": "workspace:*",
+    "effect": "4.0.0-rc.115"
   },
   "devDependencies": {}
 }
