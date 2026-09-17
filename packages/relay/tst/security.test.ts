@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { MemoryRequestTracker } from "./request-tracker.ts";
-import { StaticTenantAuthenticator } from "./tenant-auth.ts";
+import { MemoryRequestTracker } from "../src/request-tracker.ts";
+import { StaticTenantAuthenticator } from "../src/tenant-auth.ts";
 
 describe("Relay security controls", () => {
   test("authenticates a configured tenant token", () => {

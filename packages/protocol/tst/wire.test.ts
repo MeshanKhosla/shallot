@@ -4,7 +4,7 @@ import {
   parseSealedRequest,
   SEALED_FRAME_VERSION,
   SEALED_REQUEST_VERSION,
-} from "./wire.ts";
+} from "../src/wire.ts";
 
 const x25519Key = Buffer.alloc(32, 1).toString("base64url");
 const ciphertext = Buffer.from([1, 2]).toString("base64url");

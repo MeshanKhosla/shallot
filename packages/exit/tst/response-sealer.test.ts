@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { generateKeyPairSync } from "node:crypto";
 import { openRequest, sealRequest } from "@shallot/protocol";
-import { sealProviderResponse } from "./response-sealer.ts";
+import { sealProviderResponse } from "../src/response-sealer.ts";
 
 async function responsePublicKey(): Promise<CryptoKey> {
   const exitKeys = generateKeyPairSync("x25519");

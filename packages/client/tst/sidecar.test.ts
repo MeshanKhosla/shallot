@@ -7,9 +7,9 @@ import {
   parseSealedRequest,
   sealRequest,
 } from "@shallot/protocol";
-import type { SidecarConfig } from "./config.ts";
-import { createBufferedResponse, createStreamingResponse } from "./response.ts";
-import { createSidecarServer } from "./sidecar.ts";
+import type { SidecarConfig } from "../src/config.ts";
+import { createBufferedResponse, createStreamingResponse } from "../src/response.ts";
+import { createSidecarServer } from "../src/sidecar.ts";
 
 const servers: Array<{ stop(closeActiveConnections?: boolean): void }> = [];
 

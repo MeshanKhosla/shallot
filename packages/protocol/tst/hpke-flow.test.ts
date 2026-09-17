@@ -5,7 +5,7 @@ import {
   createResponseSealer,
   openRequest,
   sealRequest,
-} from "./index.ts";
+} from "../src/index.ts";
 
 describe("sealed protocol", () => {
   test("round-trips a request and response frame", async () => {

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { MemoryReplayCache } from "./replay-cache.ts";
-import { sanitizeChatRequest } from "./sanitize-request.ts";
-import { requireRelayAuthorization } from "./service-auth.ts";
+import { MemoryReplayCache } from "../src/replay-cache.ts";
+import { sanitizeChatRequest } from "../src/sanitize-request.ts";
+import { requireRelayAuthorization } from "../src/service-auth.ts";
 
 describe("Exit security controls", () => {
   test("authenticates only the Relay service token", () => {

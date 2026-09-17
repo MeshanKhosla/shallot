@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { OpenAICompatibleProvider } from "./openai-compatible-provider.ts";
+import { OpenAICompatibleProvider } from "../src/openai-compatible-provider.ts";
 
 describe("OpenAI-compatible LLM provider", () => {
   test("owns upstream HTTP authentication and request forwarding", async () => {

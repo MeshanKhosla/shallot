@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { BodyTooLargeError, readLimitedBody } from "./http.ts";
+import { BodyTooLargeError, readLimitedBody } from "../src/http.ts";
 
 describe("bounded request bodies", () => {
   test("reads a chunked body within the limit", async () => {
