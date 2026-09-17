@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { createDebugLogger, type DebugLogEntry } from "./index.ts";
+import {
+  createDebugLogger,
+  type DebugLogEntry,
+  formatBodyForDebug,
+  formatDebugEntry,
+} from "./index.ts";
 
 describe("debug logger", () => {
   test("emits a structured component view when enabled", () => {
@@ -32,5 +37,28 @@ describe("debug logger", () => {
     logger.debug("request.decrypted", { tenantId: "unknown" });
 
     expect(called).toBeFalse();
+  });
+
+  test("formats terminal output with a readable header and indented view", () => {
+    const output = formatDebugEntry(
+      {
+        timestamp: "2026-09-16T19:25:45.851Z",
+        level: "debug",
+        component: "sidecar",
+        event: "request.received",
+        view: { tenantCredential: "present", request: { model: "mock-text" } },
+      },
+      "pretty",
+    );
+
+    expect(output).toBe(
+      '2026-09-16T19:25:45.851Z  DEBUG  sidecar  request.received\n{\n  "tenantCredential": "present",\n  "request": {\n    "model": "mock-text"\n  }\n}',
+    );
+  });
+
+  test("parses JSON bodies for nested debug output", () => {
+    expect(formatBodyForDebug('{"answer":"hello"}')).toEqual({ answer: "hello" });
+    expect(formatBodyForDebug("data: streamed text")).toBe("data: streamed text");
+    expect(formatBodyForDebug("")).toBe("");
   });
 });

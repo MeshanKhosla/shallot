@@ -1,4 +1,8 @@
-import { createDebugLogger, type DebugLogger } from "@shallot/observability";
+import {
+  createDebugLogger,
+  type DebugLogger,
+  formatBodyForDebug,
+} from "@shallot/observability";
 import {
   createResponseSealer,
   encodeResponseHead,
@@ -176,7 +180,9 @@ export async function sealProviderResponse(
           requestId,
           tenantId: "unknown",
           final: chunk.done === true,
-          plaintext: debugDecoder.decode(payload, { stream: chunk.done !== true }),
+          plaintext: formatBodyForDebug(
+            debugDecoder.decode(payload, { stream: chunk.done !== true }),
+          ),
         });
         const frame = await sealer.sealFrame(
           payload,

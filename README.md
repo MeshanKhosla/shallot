@@ -81,6 +81,9 @@ prompt and answer as encrypted. Exit and the provider log plaintext content with
 the tenant set to `unknown`. Sidecar logs both plaintext directions on the client
 machine.
 
+Set `SHALLOT_LOG_FORMAT=pretty` for indented terminal output. The default `json`
+format emits one JSON object per line for log collectors.
+
 Debug logs intentionally contain prompt and response text on machines allowed to
 read it. Do not enable them in production or send them to a shared log service.
 

@@ -1,4 +1,4 @@
-import { createDebugLogger } from "@shallot/observability";
+import { createDebugLogger, formatBodyForDebug } from "@shallot/observability";
 import type { Server } from "bun";
 import { loadConfig, type MockProviderConfig } from "./config.ts";
 import { createOpenAIResponse, parseChatRequest } from "./openai-response.ts";
@@ -56,7 +56,7 @@ export function createMockProviderServer(
               logger.debug("response.sent", {
                 tenantId: "unknown",
                 status: response.status,
-                body,
+                body: formatBodyForDebug(body),
               });
             });
         }

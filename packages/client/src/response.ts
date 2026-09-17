@@ -1,4 +1,8 @@
-import { createDebugLogger, type DebugLogger } from "@shallot/observability";
+import {
+  createDebugLogger,
+  type DebugLogger,
+  formatBodyForDebug,
+} from "@shallot/observability";
 import {
   createResponseOpener,
   decodeResponseHead,
@@ -117,7 +121,9 @@ async function* decryptResponseFrames(
       sequence: frame.sequence,
       kind: frame.kind,
       final: frame.final,
-      plaintext: debugDecoder.decode(payload, { stream: !frame.final }),
+      plaintext: formatBodyForDebug(
+        debugDecoder.decode(payload, { stream: !frame.final }),
+      ),
     });
     expectedSequence += 1;
     if (expectedSequence > config.maxResponseFrames) {
