@@ -47,13 +47,13 @@ function readEnvelope(
   { envelope: SealedRequest; rawBody: string },
   RelayRequestTooLarge | RelayInvalidRequest
 > {
-  const readBody = Effect.promise(() => readLimitedBody(req, maxBytes)).pipe(
-    Effect.catchDefect((cause) =>
-      cause instanceof BodyTooLargeError
-        ? Effect.fail(new RelayRequestTooLarge())
-        : Effect.die(cause),
-    ),
-  );
+  const readBody = Effect.tryPromise({
+    try: () => readLimitedBody(req, maxBytes),
+    catch: (cause) => {
+      if (cause instanceof BodyTooLargeError) return new RelayRequestTooLarge();
+      throw cause;
+    },
+  });
 
   return Effect.gen(function* () {
     const body = yield* readBody;

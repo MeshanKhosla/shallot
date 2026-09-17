@@ -21,11 +21,13 @@ function expectedPromise<A, E>(
   evaluate: () => Promise<A>,
   guard: (cause: unknown) => cause is E,
 ): Effect.Effect<A, E> {
-  return Effect.promise(evaluate).pipe(
-    Effect.catchDefect((cause) =>
-      guard(cause) ? Effect.fail(cause) : Effect.die(cause),
-    ),
-  );
+  return Effect.tryPromise({
+    try: evaluate,
+    catch: (cause) => {
+      if (guard(cause)) return cause;
+      throw cause;
+    },
+  });
 }
 
 function isRequestReadError(

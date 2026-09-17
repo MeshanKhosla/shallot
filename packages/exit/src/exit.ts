@@ -30,28 +30,30 @@ import { sealProviderResponse } from "./response-sealer.ts";
 import { sanitizeChatRequest } from "./sanitize-request.ts";
 import { requireRelayAuthorization } from "./service-auth.ts";
 
-function expectedDefect<A, E>(
+function expectedSync<A, E>(
   evaluate: () => A,
   guard: (cause: unknown) => cause is E,
 ): Effect.Effect<A, E> {
-  return Effect.sync(evaluate).pipe(
-    Effect.catchDefect((cause) =>
-      guard(cause) ? Effect.fail(cause) : Effect.die(cause),
-    ),
-  );
+  return Effect.try({
+    try: evaluate,
+    catch: (cause) => {
+      if (guard(cause)) return cause;
+      throw cause;
+    },
+  });
 }
 
 function readEnvelope(
   req: Request,
   maxBytes: number,
 ): Effect.Effect<SealedRequest, ExitRequestTooLarge | ExitInvalidRequest> {
-  const readBody = Effect.promise(() => readLimitedBody(req, maxBytes)).pipe(
-    Effect.catchDefect((cause) =>
-      cause instanceof BodyTooLargeError
-        ? Effect.fail(new ExitRequestTooLarge())
-        : Effect.die(cause),
-    ),
-  );
+  const readBody = Effect.tryPromise({
+    try: () => readLimitedBody(req, maxBytes),
+    catch: (cause) => {
+      if (cause instanceof BodyTooLargeError) return new ExitRequestTooLarge();
+      throw cause;
+    },
+  });
 
   return Effect.gen(function* () {
     const body = yield* readBody;
@@ -98,7 +100,7 @@ export const handleExitRequest = Effect.fn("handleExitRequest")(function* (
     return yield* new ExitRouteNotFound();
   }
 
-  yield* expectedDefect(
+  yield* expectedSync(
     () => requireRelayAuthorization(req.headers.get("authorization"), config.relayToken),
     (cause): cause is ExitAuthenticationError => cause instanceof ExitAuthenticationError,
   );
@@ -115,7 +117,7 @@ export const handleExitRequest = Effect.fn("handleExitRequest")(function* (
   );
 
   const opened = yield* openEnvelope(envelope, config);
-  const sanitized = yield* expectedDefect(
+  const sanitized = yield* expectedSync(
     () => {
       const plaintext = JSON.parse(opened.payload.toString("utf8"));
       return sanitizeChatRequest(plaintext, config.llm.allowedModels);

@@ -12,12 +12,14 @@ export class ReplayProtection extends Context.Service<
 export function replayProtectionLayer(cache: ReplayCache): Layer.Layer<ReplayProtection> {
   return Layer.succeed(ReplayProtection, {
     claim: (key) =>
-      Effect.sync(() => cache.claim(key)).pipe(
-        Effect.catchDefect((cause) =>
-          cause instanceof ReplayCacheCapacityError
-            ? Effect.fail(new ExitReplayCapacityExhausted())
-            : Effect.die(cause),
-        ),
-      ),
+      Effect.try({
+        try: () => cache.claim(key),
+        catch: (cause) => {
+          if (cause instanceof ReplayCacheCapacityError) {
+            return new ExitReplayCapacityExhausted();
+          }
+          throw cause;
+        },
+      }),
   });
 }
