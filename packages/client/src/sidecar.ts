@@ -2,7 +2,7 @@ import { createDebugLogger, formatCiphertextPreview } from "@shallot/observabili
 import { PATHS, sealRequest } from "@shallot/protocol";
 import { bindRuntimeLifecycle, recoverDefect } from "@shallot/server-runtime";
 import type { Server } from "bun";
-import { Effect, type Layer, ManagedRuntime } from "effect";
+import { Effect, Layer, ManagedRuntime } from "effect";
 import { readChatRequest } from "./chat-request.ts";
 import { loadConfig, type SidecarConfig } from "./config.ts";
 import {
@@ -15,7 +15,7 @@ import {
   sidecarDefectResponse,
   sidecarErrorResponse,
 } from "./errors.ts";
-import { RelayClient, relayClientLayer } from "./relay.ts";
+import { RelayClient, relayClientLayer, relayTransportLive } from "./relay.ts";
 import { createBufferedResponse, createStreamingResponse } from "./response.ts";
 
 export function createSidecarServer(
@@ -45,7 +45,7 @@ export function sidecarLive(config: SidecarConfig): Layer.Layer<RelayClient> {
   return relayClientLayer({
     url: config.relayUrl,
     timeoutMs: config.relayTimeoutMs,
-  });
+  }).pipe(Layer.provide(relayTransportLive));
 }
 
 export const handleSidecarRequest = Effect.fn("handleSidecarRequest")(function* (

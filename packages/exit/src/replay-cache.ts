@@ -1,5 +1,5 @@
 export interface ReplayCache {
-  claim(key: string): boolean;
+  claim(key: string, now: number): boolean;
 }
 
 export class ReplayCacheCapacityError extends Error {}
@@ -9,12 +9,10 @@ export class MemoryReplayCache implements ReplayCache {
 
   constructor(
     private readonly ttlMs: number,
-    private readonly now: () => number = Date.now,
     private readonly maxEntries = 100_000,
   ) {}
 
-  claim(key: string): boolean {
-    const now = this.now();
+  claim(key: string, now: number): boolean {
     this.prune(now);
 
     const expiry = this.expiresAt.get(key);

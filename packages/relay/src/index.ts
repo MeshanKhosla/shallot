@@ -1,11 +1,15 @@
 export { loadConfig, type RelayConfig } from "./config.ts";
 export {
   createRelayServer,
-  type RelayHooks,
-  type RelayObservation,
   type RelayServices,
   relayLive,
 } from "./relay.ts";
+export {
+  type RelayObservation,
+  RelayObserver,
+  relayObserverLayer,
+  relayObserverNoop,
+} from "./relay-observer.ts";
 export {
   MemoryRequestTracker,
   RequestTracker,

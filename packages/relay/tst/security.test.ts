@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { Effect } from "effect";
+import { TestClock } from "effect/testing";
 import { MemoryRequestTracker } from "../src/request-tracker.ts";
 import { StaticTenantAuthenticator } from "../src/tenant-auth.ts";
 
@@ -23,19 +24,22 @@ describe("Relay security controls", () => {
     );
   });
 
-  test("tracks request IDs separately for each tenant", () => {
-    let now = 1_000;
-    const tracker = new MemoryRequestTracker(100, () => now);
-
-    expect(Effect.runSync(tracker.claim("tenant-one", "request-one"))).toBeTrue();
-    expect(Effect.runSync(tracker.claim("tenant-one", "request-one"))).toBeFalse();
-    expect(Effect.runSync(tracker.claim("tenant-two", "request-one"))).toBeTrue();
-    now += 101;
-    expect(Effect.runSync(tracker.claim("tenant-one", "request-one"))).toBeTrue();
+  test("tracks request IDs separately for each tenant", async () => {
+    const tracker = new MemoryRequestTracker(100);
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        yield* TestClock.setTime(1_000);
+        expect(yield* tracker.claim("tenant-one", "request-one")).toBeTrue();
+        expect(yield* tracker.claim("tenant-one", "request-one")).toBeFalse();
+        expect(yield* tracker.claim("tenant-two", "request-one")).toBeTrue();
+        yield* TestClock.adjust(101);
+        expect(yield* tracker.claim("tenant-one", "request-one")).toBeTrue();
+      }).pipe(Effect.provide(TestClock.layer())),
+    );
   });
 
   test("bounds tracked request IDs", () => {
-    const tracker = new MemoryRequestTracker(100, () => 1_000, 1);
+    const tracker = new MemoryRequestTracker(100, 1);
     expect(Effect.runSync(tracker.claim("tenant-one", "request-one"))).toBeTrue();
     expect(() => Effect.runSync(tracker.claim("tenant-one", "request-two"))).toThrow(
       "request tracker is full",
@@ -43,7 +47,7 @@ describe("Relay security controls", () => {
   });
 
   test("isolates request capacity between tenants", () => {
-    const tracker = new MemoryRequestTracker(100, () => 1_000, 10, 1);
+    const tracker = new MemoryRequestTracker(100, 10, 1);
     expect(Effect.runSync(tracker.claim("tenant-one", "request-one"))).toBeTrue();
     expect(() => Effect.runSync(tracker.claim("tenant-one", "request-two"))).toThrow(
       "request tracker is full",

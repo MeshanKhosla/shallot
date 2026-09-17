@@ -1,14 +1,17 @@
 import { describe, expect, test } from "bun:test";
-import { Effect } from "effect";
+import { Effect, Layer } from "effect";
 import {
   ExitClient,
-  type ExitClientDependencies,
+  ExitTransport,
   exitClientLayer,
   type RelayFetch,
 } from "../src/exit-client.ts";
 
-function dependencies(fetch: RelayFetch): ExitClientDependencies {
-  return { fetch };
+function transport(
+  fetch: RelayFetch,
+  timeoutSignal = AbortSignal.timeout,
+): ExitTransport["Service"] {
+  return { fetch, timeoutSignal };
 }
 
 const config = {
@@ -17,11 +20,17 @@ const config = {
   timeoutMs: 1_000,
 };
 
-function forward(dependencies: ExitClientDependencies) {
+function forward(exitTransport: ExitTransport["Service"]) {
   return Effect.gen(function* () {
     const client = yield* ExitClient;
     return yield* client.forward("{}", new AbortController().signal);
-  }).pipe(Effect.provide(exitClientLayer(config, dependencies)));
+  }).pipe(
+    Effect.provide(
+      exitClientLayer(config).pipe(
+        Layer.provide(Layer.succeed(ExitTransport, exitTransport)),
+      ),
+    ),
+  );
 }
 
 describe("Relay Exit client", () => {
@@ -31,7 +40,7 @@ describe("Relay Exit client", () => {
       startFetch = resolve;
     });
     let fetchWasAborted = false;
-    const configured = dependencies(
+    const configured = transport(
       (_input, init) =>
         new Promise<Response>((_resolve, reject) => {
           startFetch?.();
@@ -58,15 +67,15 @@ describe("Relay Exit client", () => {
 
   test("reports timeout from a controlled timeout signal", async () => {
     const timeout = new AbortController();
-    let configured = dependencies(
+    const configured = transport(
       (_input, init) =>
         new Promise<Response>((_resolve, reject) => {
           init?.signal?.addEventListener("abort", () => reject(init.signal?.reason), {
             once: true,
           });
         }),
+      () => timeout.signal,
     );
-    configured = { ...configured, timeoutSignal: () => timeout.signal };
     const failure = Effect.runPromise(Effect.flip(forward(configured)));
 
     timeout.abort("controlled timeout");

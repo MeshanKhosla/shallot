@@ -7,7 +7,12 @@ import {
   createMockProviderServer,
   type ProviderObservation,
 } from "@shallot/mock-provider";
-import { createRelayServer, type RelayObservation } from "@shallot/relay";
+import {
+  createRelayServer,
+  type RelayObservation,
+  relayLive,
+  relayObserverLayer,
+} from "@shallot/relay";
 import { generateText, Output, stepCountIs, streamText, tool } from "ai";
 import { z } from "zod";
 
@@ -103,10 +108,16 @@ function setupGateway(options: { providerChunkDelayMs?: number } = {}) {
     maxConcurrentRequests: 10,
     exitTimeoutMs: 1_000,
   };
-  const relay = createRelayServer(relayConfig, undefined, {
-    observe: (observation) => relayObservations.push(observation),
-    observeResponseChunk: (chunk) => relayResponseChunks.push(chunk.slice()),
-  });
+  const relay = createRelayServer(
+    relayConfig,
+    relayLive(
+      relayConfig,
+      relayObserverLayer({
+        observeRequest: (observation) => relayObservations.push(observation),
+        observeResponseChunk: (chunk) => relayResponseChunks.push(chunk.slice()),
+      }),
+    ),
+  );
   servers.push(relay);
 
   const sidecar = createSidecarServer({

@@ -1,18 +1,18 @@
 import { describe, expect, test } from "bun:test";
 import { generateKeyPairSync } from "node:crypto";
 import { sealRequest } from "@shallot/protocol";
-import { Effect } from "effect";
+import { Effect, Layer } from "effect";
 import type { SidecarConfig } from "../src/config.ts";
 import {
   RelayClient,
-  type RelayClientDependencies,
+  RelayTransport,
   relayClientLayer,
   type SidecarFetch,
 } from "../src/relay.ts";
 
 async function setup(fetch: SidecarFetch): Promise<{
   config: SidecarConfig;
-  dependencies: RelayClientDependencies;
+  fetch: SidecarFetch;
   request: Request;
   envelope: Awaited<ReturnType<typeof sealRequest>>["envelope"];
 }> {
@@ -36,7 +36,7 @@ async function setup(fetch: SidecarFetch): Promise<{
       maxResponseFrames: 10,
       maxResponseBytes: 1024,
     },
-    dependencies: { fetch },
+    fetch,
     request: new Request("http://sidecar.test/v1/chat/completions"),
     envelope: sealed.envelope,
   };
@@ -44,7 +44,7 @@ async function setup(fetch: SidecarFetch): Promise<{
 
 function forward(
   config: SidecarConfig,
-  dependencies: RelayClientDependencies,
+  transport: RelayTransport["Service"],
   request: Request,
   envelope: Awaited<ReturnType<typeof sealRequest>>["envelope"],
 ) {
@@ -53,10 +53,10 @@ function forward(
     return yield* client.forward(request, envelope);
   }).pipe(
     Effect.provide(
-      relayClientLayer(
-        { url: config.relayUrl, timeoutMs: config.relayTimeoutMs },
-        dependencies,
-      ),
+      relayClientLayer({
+        url: config.relayUrl,
+        timeoutMs: config.relayTimeoutMs,
+      }).pipe(Layer.provide(Layer.succeed(RelayTransport, transport))),
     ),
   );
 }
@@ -84,7 +84,12 @@ describe("Sidecar Relay client", () => {
     );
     const cancellation = new AbortController();
     const result = Effect.runPromise(
-      forward(harness.config, harness.dependencies, harness.request, harness.envelope),
+      forward(
+        harness.config,
+        { fetch: harness.fetch, timeoutSignal: AbortSignal.timeout },
+        harness.request,
+        harness.envelope,
+      ),
       { signal: cancellation.signal },
     );
 
@@ -104,13 +109,14 @@ describe("Sidecar Relay client", () => {
           });
         }),
     );
-    harness.dependencies = {
-      ...harness.dependencies,
-      timeoutSignal: () => timeout.signal,
-    };
     const failure = Effect.runPromise(
       Effect.flip(
-        forward(harness.config, harness.dependencies, harness.request, harness.envelope),
+        forward(
+          harness.config,
+          { fetch: harness.fetch, timeoutSignal: () => timeout.signal },
+          harness.request,
+          harness.envelope,
+        ),
       ),
     );
 

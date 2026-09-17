@@ -7,10 +7,10 @@ export {
   type LlmProviderService,
 } from "./llm-provider.ts";
 export {
-  OpenAICompatibleProvider,
   type OpenAICompatibleProviderConfig,
-  type OpenAICompatibleProviderDependencies,
   openAICompatibleProviderLayer,
+  ProviderTransport,
+  providerTransportLive,
 } from "./openai-compatible-provider.ts";
 export {
   MemoryReplayCache,

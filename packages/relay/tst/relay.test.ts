@@ -4,8 +4,9 @@ import { sealRequest } from "@shallot/protocol";
 import { Layer } from "effect";
 import { concurrencyLimiterLayer } from "../src/concurrency-limiter.ts";
 import type { RelayConfig } from "../src/config.ts";
-import { exitClientLayer, type RelayFetch } from "../src/exit-client.ts";
+import { ExitTransport, exitClientLayer, type RelayFetch } from "../src/exit-client.ts";
 import { createRelayServer } from "../src/relay.ts";
+import { relayObserverNoop } from "../src/relay-observer.ts";
 import { requestTrackerLayer } from "../src/request-tracker.ts";
 import { tenantAuthenticatorLayer } from "../src/tenant-auth.ts";
 
@@ -51,14 +52,19 @@ function services(config: RelayConfig, exitFetch: RelayFetch) {
       maxEntriesPerTenant: config.maxRequestEntriesPerTenant,
     }),
     concurrencyLimiterLayer(config.maxConcurrentRequests),
-    exitClientLayer(
-      {
-        url: config.exitUrl,
-        token: config.exitToken,
-        timeoutMs: config.exitTimeoutMs,
-      },
-      { fetch: exitFetch },
+    exitClientLayer({
+      url: config.exitUrl,
+      token: config.exitToken,
+      timeoutMs: config.exitTimeoutMs,
+    }).pipe(
+      Layer.provide(
+        Layer.succeed(ExitTransport, {
+          fetch: exitFetch,
+          timeoutSignal: AbortSignal.timeout,
+        }),
+      ),
     ),
+    relayObserverNoop,
   );
 }
 

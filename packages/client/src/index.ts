@@ -2,8 +2,9 @@ export { PATHS } from "@shallot/protocol";
 export { loadConfig, type SidecarConfig } from "./config.ts";
 export {
   RelayClient,
-  type RelayClientDependencies,
+  RelayTransport,
   relayClientLayer,
+  relayTransportLive,
   type SidecarFetch,
 } from "./relay.ts";
 export { createSidecarServer, sidecarLive } from "./sidecar.ts";

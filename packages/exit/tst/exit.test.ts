@@ -5,8 +5,7 @@ import { Effect, Layer } from "effect";
 import type { ExitConfig } from "../src/config.ts";
 import { createExitServer } from "../src/exit.ts";
 import { LlmProvider, type LlmProviderService } from "../src/llm-provider.ts";
-import { MemoryReplayCache, type ReplayCache } from "../src/replay-cache.ts";
-import { replayProtectionLayer } from "../src/replay-protection.ts";
+import { ReplayProtection, replayProtectionLayer } from "../src/replay-protection.ts";
 
 const servers: Array<{ stop(closeActiveConnections?: boolean): Promise<void> }> = [];
 
@@ -56,12 +55,12 @@ function config(privateKeys: Map<string, KeyObject>): ExitConfig {
 
 function services(
   provider: LlmProviderService,
-  replayCache: ReplayCache = new MemoryReplayCache(60_000),
+  replayProtection: Layer.Layer<ReplayProtection> = replayProtectionLayer({
+    ttlMs: 60_000,
+    maxEntries: 100,
+  }),
 ) {
-  return Layer.mergeAll(
-    Layer.succeed(LlmProvider, provider),
-    replayProtectionLayer(replayCache),
-  );
+  return Layer.mergeAll(Layer.succeed(LlmProvider, provider), replayProtection);
 }
 
 describe("Exit Effect runtime", () => {
@@ -97,14 +96,12 @@ describe("Exit Effect runtime", () => {
     const provider: LlmProviderService = {
       complete: () => Effect.succeed(Response.json({ choices: [] })),
     };
-    const replayCache: ReplayCache = {
-      claim() {
-        throw new Error("private-key-canary");
-      },
-    };
+    const replayProtection = Layer.succeed(ReplayProtection, {
+      claim: () => Effect.die(new Error("private-key-canary")),
+    });
     const server = createExitServer(
       config(sealed.privateKeys),
-      services(provider, replayCache),
+      services(provider, replayProtection),
     );
     servers.push(server);
 

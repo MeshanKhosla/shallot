@@ -23,11 +23,6 @@ export interface RelayClientConfig {
   readonly timeoutMs: number;
 }
 
-export interface RelayClientDependencies {
-  readonly fetch?: SidecarFetch;
-  readonly timeoutSignal?: (timeoutMs: number) => AbortSignal;
-}
-
 export class RelayClient extends Context.Service<
   RelayClient,
   {
@@ -38,42 +33,57 @@ export class RelayClient extends Context.Service<
   }
 >()("@shallot/client/RelayClient") {}
 
+export class RelayTransport extends Context.Service<
+  RelayTransport,
+  {
+    readonly fetch: SidecarFetch;
+    readonly timeoutSignal: (timeoutMs: number) => AbortSignal;
+  }
+>()("@shallot/client/RelayTransport") {}
+
+export const relayTransportLive = Layer.succeed(RelayTransport, {
+  fetch,
+  timeoutSignal: AbortSignal.timeout,
+});
+
 export function relayClientLayer(
   config: RelayClientConfig,
-  dependencies: RelayClientDependencies = {},
-): Layer.Layer<RelayClient> {
-  const relayFetch = dependencies.fetch ?? fetch;
-  const timeoutSignal = dependencies.timeoutSignal ?? AbortSignal.timeout;
+): Layer.Layer<RelayClient, never, RelayTransport> {
+  return Layer.effect(
+    RelayClient,
+    Effect.gen(function* () {
+      const transport = yield* RelayTransport;
+      return RelayClient.of({
+        forward: (request, envelope) =>
+          Effect.gen(function* () {
+            const timeout = transport.timeoutSignal(config.timeoutMs);
+            const response = yield* Effect.tryPromise({
+              try: (effectSignal) =>
+                transport.fetch(config.url, {
+                  method: "POST",
+                  headers: relayHeaders(request),
+                  body: JSON.stringify(envelope),
+                  signal: AbortSignal.any([request.signal, effectSignal, timeout]),
+                }),
+              catch: () =>
+                timeout.aborted && !request.signal.aborted
+                  ? new RelayTimeout()
+                  : new RelayTransportFailure(),
+            });
 
-  return Layer.succeed(RelayClient, {
-    forward: (request, envelope) =>
-      Effect.gen(function* () {
-        const timeout = timeoutSignal(config.timeoutMs);
-        const response = yield* Effect.tryPromise({
-          try: (effectSignal) =>
-            relayFetch(config.url, {
-              method: "POST",
-              headers: relayHeaders(request),
-              body: JSON.stringify(envelope),
-              signal: AbortSignal.any([request.signal, effectSignal, timeout]),
-            }),
-          catch: () =>
-            timeout.aborted && !request.signal.aborted
-              ? new RelayTimeout()
-              : new RelayTransportFailure(),
-        });
+            if (!response.ok) {
+              yield* Effect.promise(async () => {
+                await response.body?.cancel().catch(() => undefined);
+              });
+              return yield* new RelayRejected({ status: response.status });
+            }
+            if (!response.body) return yield* new RelayEmptyResponse();
 
-        if (!response.ok) {
-          yield* Effect.promise(async () => {
-            await response.body?.cancel().catch(() => undefined);
-          });
-          return yield* new RelayRejected({ status: response.status });
-        }
-        if (!response.body) return yield* new RelayEmptyResponse();
-
-        return response.body;
-      }),
-  });
+            return response.body;
+          }),
+      });
+    }),
+  );
 }
 
 function relayHeaders(req: Request): Headers {

@@ -1,4 +1,4 @@
-import { Context, Effect, Layer } from "effect";
+import { Clock, Context, Effect, Layer } from "effect";
 import { RelayTrackerCapacityExhausted } from "./errors.ts";
 
 export class RequestTracker extends Context.Service<
@@ -19,7 +19,6 @@ export class MemoryRequestTracker implements RequestTrackerService {
 
   constructor(
     private readonly ttlMs: number,
-    private readonly now: () => number = Date.now,
     private readonly maxEntries = 100_000,
     private readonly maxEntriesPerTenant = 10_000,
   ) {}
@@ -28,21 +27,22 @@ export class MemoryRequestTracker implements RequestTrackerService {
     tenantId: string,
     requestId: string,
   ): Effect.Effect<boolean, RelayTrackerCapacityExhausted> {
-    return Effect.suspend(() => {
-      const now = this.now();
-      this.prune(now);
+    const tracker = this;
+    return Effect.gen(function* () {
+      const now = yield* Clock.currentTimeMillis;
+      tracker.prune(now);
       const key = `${tenantId}\0${requestId}`;
-      const entry = this.entries.get(key);
-      if (entry !== undefined && entry.expiresAt > now) return Effect.succeed(false);
+      const entry = tracker.entries.get(key);
+      if (entry !== undefined && entry.expiresAt > now) return false;
       if (
-        this.entries.size >= this.maxEntries ||
-        (this.tenantCounts.get(tenantId) ?? 0) >= this.maxEntriesPerTenant
+        tracker.entries.size >= tracker.maxEntries ||
+        (tracker.tenantCounts.get(tenantId) ?? 0) >= tracker.maxEntriesPerTenant
       ) {
-        return Effect.fail(new RelayTrackerCapacityExhausted());
+        return yield* new RelayTrackerCapacityExhausted();
       }
-      this.entries.set(key, { tenantId, expiresAt: now + this.ttlMs });
-      this.tenantCounts.set(tenantId, (this.tenantCounts.get(tenantId) ?? 0) + 1);
-      return Effect.succeed(true);
+      tracker.entries.set(key, { tenantId, expiresAt: now + tracker.ttlMs });
+      tracker.tenantCounts.set(tenantId, (tracker.tenantCounts.get(tenantId) ?? 0) + 1);
+      return true;
     });
   }
 
@@ -68,11 +68,6 @@ export function requestTrackerLayer(
 ): Layer.Layer<RequestTracker> {
   return Layer.succeed(
     RequestTracker,
-    new MemoryRequestTracker(
-      config.ttlMs,
-      Date.now,
-      config.maxEntries,
-      config.maxEntriesPerTenant,
-    ),
+    new MemoryRequestTracker(config.ttlMs, config.maxEntries, config.maxEntriesPerTenant),
   );
 }

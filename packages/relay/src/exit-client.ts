@@ -24,11 +24,6 @@ export interface ExitClientConfig {
   readonly timeoutMs: number;
 }
 
-export interface ExitClientDependencies {
-  readonly fetch?: RelayFetch;
-  readonly timeoutSignal?: (timeoutMs: number) => AbortSignal;
-}
-
 export class ExitClient extends Context.Service<
   ExitClient,
   {
@@ -39,44 +34,59 @@ export class ExitClient extends Context.Service<
   }
 >()("@shallot/relay/ExitClient") {}
 
+export class ExitTransport extends Context.Service<
+  ExitTransport,
+  {
+    readonly fetch: RelayFetch;
+    readonly timeoutSignal: (timeoutMs: number) => AbortSignal;
+  }
+>()("@shallot/relay/ExitTransport") {}
+
+export const exitTransportLive = Layer.succeed(ExitTransport, {
+  fetch,
+  timeoutSignal: AbortSignal.timeout,
+});
+
 export function exitClientLayer(
   config: ExitClientConfig,
-  dependencies: ExitClientDependencies = {},
-): Layer.Layer<ExitClient> {
+): Layer.Layer<ExitClient, never, ExitTransport> {
   const headers = new Headers({
     accept: SEALED_STREAM_CONTENT_TYPE,
     authorization: `Bearer ${config.token}`,
     "content-type": "application/json",
   });
-  const exitFetch = dependencies.fetch ?? fetch;
-  const timeoutSignal = dependencies.timeoutSignal ?? AbortSignal.timeout;
+  return Layer.effect(
+    ExitClient,
+    Effect.gen(function* () {
+      const transport = yield* ExitTransport;
+      return ExitClient.of({
+        forward: (rawBody, clientSignal) =>
+          Effect.gen(function* () {
+            const timeout = transport.timeoutSignal(config.timeoutMs);
+            const response = yield* Effect.tryPromise({
+              try: (effectSignal) =>
+                transport.fetch(config.url, {
+                  method: "POST",
+                  headers,
+                  body: rawBody,
+                  signal: AbortSignal.any([clientSignal, effectSignal, timeout]),
+                }),
+              catch: () =>
+                timeout.aborted && !clientSignal.aborted
+                  ? new ExitTimeout()
+                  : new ExitTransportFailure(),
+            });
 
-  return Layer.succeed(ExitClient, {
-    forward: (rawBody, clientSignal) =>
-      Effect.gen(function* () {
-        const timeout = timeoutSignal(config.timeoutMs);
-        const response = yield* Effect.tryPromise({
-          try: (effectSignal) =>
-            exitFetch(config.url, {
-              method: "POST",
-              headers,
-              body: rawBody,
-              signal: AbortSignal.any([clientSignal, effectSignal, timeout]),
-            }),
-          catch: () =>
-            timeout.aborted && !clientSignal.aborted
-              ? new ExitTimeout()
-              : new ExitTransportFailure(),
-        });
-
-        if (!response.ok) {
-          yield* Effect.promise(async () => {
-            await response.body?.cancel().catch(() => undefined);
-          });
-          return yield* new ExitRejected({ status: response.status });
-        }
-        if (!response.body) return yield* new ExitEmptyResponse();
-        return response.body;
-      }),
-  });
+            if (!response.ok) {
+              yield* Effect.promise(async () => {
+                await response.body?.cancel().catch(() => undefined);
+              });
+              return yield* new ExitRejected({ status: response.status });
+            }
+            if (!response.body) return yield* new ExitEmptyResponse();
+            return response.body;
+          }),
+      });
+    }),
+  );
 }

@@ -1,6 +1,6 @@
-import { Context, Effect, Layer } from "effect";
+import { Clock, Context, Effect, Layer } from "effect";
 import { ExitReplayCapacityExhausted } from "./errors.ts";
-import { type ReplayCache, ReplayCacheCapacityError } from "./replay-cache.ts";
+import { MemoryReplayCache, ReplayCacheCapacityError } from "./replay-cache.ts";
 
 export class ReplayProtection extends Context.Service<
   ReplayProtection,
@@ -9,17 +9,24 @@ export class ReplayProtection extends Context.Service<
   }
 >()("@shallot/exit/ReplayProtection") {}
 
-export function replayProtectionLayer(cache: ReplayCache): Layer.Layer<ReplayProtection> {
+export function replayProtectionLayer(config: {
+  readonly ttlMs: number;
+  readonly maxEntries: number;
+}): Layer.Layer<ReplayProtection> {
+  const cache = new MemoryReplayCache(config.ttlMs, config.maxEntries);
   return Layer.succeed(ReplayProtection, {
     claim: (key) =>
-      Effect.try({
-        try: () => cache.claim(key),
-        catch: (cause) => {
-          if (cause instanceof ReplayCacheCapacityError) {
-            return new ExitReplayCapacityExhausted();
-          }
-          throw cause;
-        },
+      Effect.gen(function* () {
+        const now = yield* Clock.currentTimeMillis;
+        return yield* Effect.try({
+          try: () => cache.claim(key, now),
+          catch: (cause) => {
+            if (cause instanceof ReplayCacheCapacityError) {
+              return new ExitReplayCapacityExhausted();
+            }
+            throw cause;
+          },
+        });
       }),
   });
 }

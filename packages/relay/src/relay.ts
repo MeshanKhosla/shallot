@@ -25,32 +25,21 @@ import {
   relayDefectResponse,
   relayErrorResponse,
 } from "./errors.ts";
-import { ExitClient, exitClientLayer } from "./exit-client.ts";
+import { ExitClient, exitClientLayer, exitTransportLive } from "./exit-client.ts";
+import { RelayObserver, relayObserverNoop } from "./relay-observer.ts";
 import { RequestTracker, requestTrackerLayer } from "./request-tracker.ts";
 import { TenantAuthenticator, tenantAuthenticatorLayer } from "./tenant-auth.ts";
-
-export interface RelayObservation {
-  tenantId: string;
-  requestId: string;
-  body: string;
-  forwardedHeaders: Headers;
-}
-
-export interface RelayHooks {
-  readonly observe?: (observation: RelayObservation) => void;
-  readonly observeResponseChunk?: (chunk: Uint8Array) => void;
-}
 
 export type RelayServices =
   | ConcurrencyLimiter
   | TenantAuthenticator
   | RequestTracker
-  | ExitClient;
+  | ExitClient
+  | RelayObserver;
 
 export function createRelayServer(
   config: RelayConfig = loadConfig(),
   services: Layer.Layer<RelayServices> = relayLive(config),
-  hooks: RelayHooks = {},
 ): Server<undefined> {
   const logger = createDebugLogger("relay");
   const runtime = ManagedRuntime.make(services);
@@ -59,7 +48,7 @@ export function createRelayServer(
     hostname: config.hostname,
     idleTimeout: 60,
     fetch(req) {
-      const program = handleRelayRequest(req, config, logger, hooks).pipe(
+      const program = handleRelayRequest(req, config, logger).pipe(
         Effect.catch((error) => Effect.succeed(relayErrorResponse(error))),
         Effect.catchCause(recoverDefect("relay", relayDefectResponse)),
       );
@@ -71,7 +60,10 @@ export function createRelayServer(
   return bindRuntimeLifecycle(server, runtime);
 }
 
-export function relayLive(config: RelayConfig): Layer.Layer<RelayServices> {
+export function relayLive(
+  config: RelayConfig,
+  observer: Layer.Layer<RelayObserver> = relayObserverNoop,
+): Layer.Layer<RelayServices> {
   return Layer.mergeAll(
     tenantAuthenticatorLayer(config.tenantTokens),
     requestTrackerLayer({
@@ -84,7 +76,8 @@ export function relayLive(config: RelayConfig): Layer.Layer<RelayServices> {
       url: config.exitUrl,
       token: config.exitToken,
       timeoutMs: config.exitTimeoutMs,
-    }),
+    }).pipe(Layer.provide(exitTransportLive)),
+    observer,
   );
 }
 
@@ -92,11 +85,10 @@ export const handleRelayRequest = Effect.fn("handleRelayRequest")(function* (
   req: Request,
   config: RelayConfig,
   logger = createDebugLogger("relay"),
-  hooks: RelayHooks = {},
 ): Effect.fn.Return<
   Response,
   RelayRequestError,
-  ConcurrencyLimiter | TenantAuthenticator | RequestTracker | ExitClient
+  ConcurrencyLimiter | TenantAuthenticator | RequestTracker | ExitClient | RelayObserver
 > {
   const url = new URL(req.url);
   if (req.method !== "POST" || url.pathname !== PATHS.chat) {
@@ -128,12 +120,13 @@ export const handleRelayRequest = Effect.fn("handleRelayRequest")(function* (
 
     const exitClient = yield* ExitClient;
     const responseBody = yield* exitClient.forward(rawBody, req.signal);
+    const observer = yield* RelayObserver;
     yield* Effect.sync(() => {
       const forwardedHeaders = new Headers({
         authorization: `Bearer ${config.exitToken}`,
         "content-type": "application/json",
       });
-      hooks.observe?.({
+      observer.observeRequest({
         tenantId: tenant.id,
         requestId: envelope.requestId,
         body: rawBody,
@@ -150,7 +143,7 @@ export const handleRelayRequest = Effect.fn("handleRelayRequest")(function* (
           requestId: envelope.requestId,
           encryptedBytes: chunk.byteLength,
         });
-        hooks.observeResponseChunk?.(chunk);
+        observer.observeResponseChunk(chunk);
       }),
       {
         status: 200,

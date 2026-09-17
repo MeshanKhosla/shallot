@@ -24,8 +24,10 @@ import {
   exitErrorResponse,
 } from "./errors.ts";
 import { LlmProvider } from "./llm-provider.ts";
-import { openAICompatibleProviderLayer } from "./openai-compatible-provider.ts";
-import { MemoryReplayCache } from "./replay-cache.ts";
+import {
+  openAICompatibleProviderLayer,
+  providerTransportLive,
+} from "./openai-compatible-provider.ts";
 import { ReplayProtection, replayProtectionLayer } from "./replay-protection.ts";
 import { sealProviderResponse } from "./response-sealer.ts";
 import { sanitizeChatRequest } from "./sanitize-request.ts";
@@ -62,10 +64,11 @@ export function exitLive(config: ExitConfig): Layer.Layer<ExitServices> {
       url: config.llm.url,
       apiKey: config.llm.apiKey,
       timeoutMs: config.llm.timeoutMs,
+    }).pipe(Layer.provide(providerTransportLive)),
+    replayProtectionLayer({
+      ttlMs: config.replayTtlMs,
+      maxEntries: config.replayMaxEntries,
     }),
-    replayProtectionLayer(
-      new MemoryReplayCache(config.replayTtlMs, Date.now, config.replayMaxEntries),
-    ),
   );
 }
 

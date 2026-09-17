@@ -8,17 +8,18 @@ Web Streams, and `Bun.serve` remain the external adapters.
 
 ```text
 Sidecar runtime
-  Sidecar request handler -> RelayClient
+  Sidecar request handler -> RelayClient -> RelayTransport
 
 Relay runtime
   Relay request handler -> TenantAuthenticator
-                        -> RequestTracker
+                        -> RequestTracker -> Clock
                         -> ConcurrencyLimiter
-                        -> ExitClient
+                        -> ExitClient -> ExitTransport
+                        -> RelayObserver
 
 Exit runtime
-  Exit request handler -> ReplayProtection
-                       -> LlmProvider
+  Exit request handler -> ReplayProtection -> Clock
+                       -> LlmProvider -> ProviderTransport
 
 Mock provider runtime
   Mock provider request handler
@@ -27,11 +28,18 @@ Mock provider runtime
 Server configuration contains data such as addresses, credentials, limits, and
 cache policy. It does not contain live service implementations. Each server has
 one production Layer constructor, and tests replace that Layer when they need a
-fake provider, transport, cache, clock, authenticator, or tracker. Pure
+fake provider, transport, clock, authenticator, tracker, observer, or replay
+protection. Pure
 validation, sanitization, authentication comparisons, and response
 transformations remain plain functions unless they need injected state or
 cancellation. Mock provider response functions stay plain because they have no
 service dependencies.
+
+The three outbound HTTP adapters receive their fetch and timeout behavior from
+transport Layers. Relay test observations also come from a Layer, with a no-op
+implementation in production. This leaves one dependency-injection mechanism
+for request processing. Replay expiry reads Effect's `Clock`, so tests can move
+time without adding clock callbacks to production classes.
 
 ## Runtime boundary
 
