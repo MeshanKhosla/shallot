@@ -23,7 +23,9 @@ import { z } from "zod";
 const TENANT_TOKEN = "tenant-canary-secret";
 const EXIT_TOKEN = "relay-to-exit-secret";
 const PROVIDER_TOKEN = "exit-to-provider-secret";
-const servers: Array<{ stop(closeActiveConnections?: boolean): void }> = [];
+const servers: Array<{
+  stop(closeActiveConnections?: boolean): void | Promise<void>;
+}> = [];
 
 function itemAt<T>(items: readonly T[], index: number): T {
   const item = items[index];
@@ -31,22 +33,39 @@ function itemAt<T>(items: readonly T[], index: number): T {
   return item;
 }
 
-afterEach(() => {
-  for (const server of servers.splice(0).reverse()) server.stop(true);
+afterEach(async () => {
+  await Promise.all(
+    servers
+      .splice(0)
+      .reverse()
+      .map((server) => server.stop(true)),
+  );
 });
 
-function setupGateway() {
+function setupGateway(options: { providerChunkDelayMs?: number } = {}) {
   const relayObservations: RelayObservation[] = [];
   const relayResponseChunks: Uint8Array[] = [];
   const providerObservations: ProviderObservation[] = [];
+  let resolveProviderRequest: (() => void) | undefined;
+  const providerRequest = new Promise<void>((resolve) => {
+    resolveProviderRequest = resolve;
+  });
+  let resolveProviderCancellation: (() => void) | undefined;
+  const providerCancellation = new Promise<void>((resolve) => {
+    resolveProviderCancellation = resolve;
+  });
   const exitKeys = generateKeyPairSync("x25519");
 
   const provider = createMockProviderServer({
     hostname: "127.0.0.1",
     port: 0,
     expectedApiKey: PROVIDER_TOKEN,
-    chunkDelayMs: 1,
-    observe: (observation) => providerObservations.push(observation),
+    chunkDelayMs: options.providerChunkDelayMs ?? 1,
+    observe: (observation) => {
+      providerObservations.push(observation);
+      resolveProviderRequest?.();
+    },
+    observeCancellation: () => resolveProviderCancellation?.(),
   });
   servers.push(provider);
 
@@ -125,6 +144,8 @@ function setupGateway() {
     relayObservations,
     relayResponseText: () => Buffer.concat(relayResponseChunks).toString("utf8"),
     providerObservations,
+    providerRequest,
+    providerCancellation,
   };
 }
 
@@ -173,6 +194,32 @@ describe("AI SDK through Shallot", () => {
     expect(text).toBe("deterministic-response");
     expect(gateway.relayObservations).toHaveLength(1);
     expect(gateway.relayResponseText()).not.toContain(text);
+  });
+
+  test("cancels the provider when the AI SDK client disconnects", async () => {
+    const gateway = setupGateway({ providerChunkDelayMs: 1_000 });
+    const cancellation = new AbortController();
+    const result = streamText({
+      model: gateway.shallot.chatModel("mock-stream"),
+      prompt: "cancel this generation",
+      abortSignal: cancellation.signal,
+    });
+    const consume = (async () => {
+      for await (const _part of result.textStream) {
+        // Consumption keeps the HTTP body active until the abort below.
+      }
+    })();
+
+    await gateway.providerRequest;
+    cancellation.abort("AI SDK client stopped");
+    await consume.catch(() => undefined);
+
+    expect(
+      await Promise.race([
+        gateway.providerCancellation.then(() => "cancelled" as const),
+        Bun.sleep(500).then(() => "timed out" as const),
+      ]),
+    ).toBe("cancelled");
   });
 
   test("supports an AI SDK tool round trip", async () => {

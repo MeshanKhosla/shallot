@@ -9,6 +9,7 @@ export interface MockProviderConfig {
   expectedApiKey?: string;
   chunkDelayMs: number;
   observe?: (observation: ProviderObservation) => void;
+  observeCancellation?: () => void;
 }
 
 function nonNegativeInteger(name: string, fallback: number): number {
