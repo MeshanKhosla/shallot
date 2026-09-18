@@ -42,6 +42,29 @@ describe("Relay security controls", () => {
     );
   });
 
+  test("does not expire request IDs when the wall clock moves backward", async () => {
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const tracker = yield* RequestTracker;
+        yield* TestClock.setTime(1_000);
+        expect(yield* tracker.claim("tenant-one", "request-one")).toBeTrue();
+        yield* TestClock.setTime(900);
+        expect(yield* tracker.claim("tenant-one", "request-two")).toBeTrue();
+        yield* TestClock.setTime(1_050);
+        expect(yield* tracker.claim("tenant-one", "request-two")).toBeFalse();
+      }).pipe(
+        Effect.provide([
+          requestTrackerLayer({
+            ttlMs: 100,
+            maxEntries: 10,
+            maxEntriesPerTenant: 10,
+          }),
+          TestClock.layer(),
+        ]),
+      ),
+    );
+  });
+
   test("bounds tracked request IDs", () => {
     const tracker = new MemoryRequestTracker(100, 1);
     expect(Effect.runSync(tracker.claim("tenant-one", "request-one"))).toBeTrue();

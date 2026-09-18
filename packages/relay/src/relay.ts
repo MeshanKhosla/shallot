@@ -10,11 +10,7 @@ import {
 import { bindRuntimeLifecycle, recoverDefect } from "@shallot/server-runtime";
 import type { Server } from "bun";
 import { Effect, Layer, ManagedRuntime } from "effect";
-import {
-  ConcurrencyLimiter,
-  concurrencyLimiterLayer,
-  type RequestPermit,
-} from "./concurrency-limiter.ts";
+import { ConcurrencyLimiter, concurrencyLimiterLayer } from "./concurrency-limiter.ts";
 import { loadConfig, type RelayConfig } from "./config.ts";
 import {
   RelayInvalidRequest,
@@ -28,6 +24,7 @@ import {
 import { ExitClient, exitClientLayer, exitTransportLive } from "./exit-client.ts";
 import { RelayObserver, relayObserverNoop } from "./relay-observer.ts";
 import { RequestTracker, requestTrackerLayer } from "./request-tracker.ts";
+import { proxyResponseBody } from "./response-proxy.ts";
 import { TenantAuthenticator, tenantAuthenticatorLayer } from "./tenant-auth.ts";
 
 export type RelayServices =
@@ -81,7 +78,7 @@ export function relayLive(
   );
 }
 
-export const handleRelayRequest = Effect.fn("handleRelayRequest")(function* (
+export const handleRelayRequest = Effect.fnUntraced(function* (
   req: Request,
   config: RelayConfig,
   logger = createDebugLogger("relay"),
@@ -95,13 +92,13 @@ export const handleRelayRequest = Effect.fn("handleRelayRequest")(function* (
     return yield* new RelayRouteNotFound();
   }
 
+  const authenticator = yield* TenantAuthenticator;
+  const tenant = yield* authenticator.authenticate(req.headers.get("authorization"));
+
   const limiter = yield* ConcurrencyLimiter;
   const permit = yield* limiter.acquire();
   let handedOff = false;
-
   return yield* Effect.gen(function* () {
-    const authenticator = yield* TenantAuthenticator;
-    const tenant = yield* authenticator.authenticate(req.headers.get("authorization"));
     const { envelope, rawBody } = yield* readEnvelope(req, config.maxEnvelopeBytes);
     yield* Effect.sync(() =>
       logger.debug("request.received", {
@@ -134,7 +131,7 @@ export const handleRelayRequest = Effect.fn("handleRelayRequest")(function* (
       });
     });
 
-    const body = proxyBody(responseBody, permit, (chunk) => {
+    const body = proxyResponseBody(responseBody, permit, (chunk) => {
       logger.debug("response.chunk.received", {
         tenantId: tenant.id,
         requestId: envelope.requestId,
@@ -186,68 +183,5 @@ function readEnvelope(
       }),
       catch: () => new RelayInvalidRequest(),
     });
-  });
-}
-
-interface ProxyReadDoneResult {
-  done: true;
-  value?: Uint8Array;
-}
-
-interface ProxyReadValueResult {
-  done: false;
-  value: Uint8Array;
-}
-
-type ProxyReadResult = ProxyReadDoneResult | ProxyReadValueResult;
-
-function proxyBody(
-  body: ReadableStream<Uint8Array>,
-  permit: RequestPermit,
-  observe?: (chunk: Uint8Array) => void,
-): ReadableStream<Uint8Array> {
-  const reader = body.getReader();
-  let finished = false;
-  let pendingRead: Promise<ProxyReadResult> | null = null;
-
-  async function end(reason: unknown): Promise<void> {
-    if (finished) return;
-    finished = true;
-
-    permit.release();
-    const pending = pendingRead;
-    pendingRead = null;
-    await reader.cancel(reason).catch(() => undefined);
-    if (pending) await pending.catch(() => undefined);
-    reader.releaseLock();
-  }
-
-  return new ReadableStream({
-    async pull(controller) {
-      const read = reader.read();
-      pendingRead = read;
-      let result: ProxyReadResult;
-      try {
-        result = await read;
-      } catch (error) {
-        if (finished) return;
-        pendingRead = null;
-        controller.error(error);
-        await end(error);
-        return;
-      }
-      if (finished) return;
-      pendingRead = null;
-      if (result.done) {
-        controller.close();
-        await end(undefined);
-      } else {
-        observe?.(result.value);
-        controller.enqueue(result.value);
-      }
-    },
-    async cancel(reason) {
-      await end(reason);
-    },
   });
 }

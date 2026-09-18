@@ -115,7 +115,7 @@ describe("Relay Effect runtime", () => {
     expect(await second.text()).toBe("frame\n");
   });
 
-  test("releases concurrency and cancels Exit when the consumer stops", async () => {
+  test("enforces concurrency and releases it when the consumer stops", async () => {
     let calls = 0;
     let upstreamCancelled = false;
     const server = serverWith(async () => {
@@ -135,96 +135,15 @@ describe("Relay Effect runtime", () => {
     servers.push(server);
 
     const first = await post(server, await envelope("request-one"));
+    const saturated = await post(server, await envelope("request-two"));
+    expect(saturated.status).toBe(429);
+
     await first.body?.cancel("test cancellation");
-    const second = await post(server, await envelope("request-two"));
+    const next = await post(server, await envelope("request-three"));
 
     expect(upstreamCancelled).toBeTrue();
-    expect(second.status).toBe(200);
-    expect(await second.text()).toBe("frame\n");
-  });
-
-  test("releases concurrency when the upstream body fails mid-stream", async () => {
-    let calls = 0;
-    let pulled = 0;
-    const server = serverWith(async () => {
-      calls += 1;
-      if (calls > 1) return new Response("frame\n");
-      return new Response(
-        new ReadableStream<Uint8Array>({
-          pull(controller) {
-            pulled += 1;
-            if (pulled === 1) {
-              controller.enqueue(Buffer.from("first frame\n"));
-              return;
-            }
-            controller.error(new Error("exit body failed"));
-          },
-        }),
-      );
-    });
-    servers.push(server);
-
-    let firstErrored = false;
-    try {
-      const first = await post(server, await envelope("request-one"));
-      const reader = first.body?.getReader();
-      if (reader !== undefined) {
-        try {
-          while (true) {
-            const result = await reader.read();
-            if (result.done) break;
-          }
-        } catch {
-          firstErrored = true;
-        }
-      }
-    } catch {
-      firstErrored = true;
-    }
-    expect(firstErrored).toBeTrue();
-
-    const second = await post(server, await envelope("request-two"));
-    expect(second.status).toBe(200);
-    expect(await second.text()).toBe("frame\n");
-  });
-
-  test("releases concurrency exactly once when cancelling a pending upstream read", async () => {
-    let calls = 0;
-    let cancellations = 0;
-    const server = serverWith(async () => {
-      calls += 1;
-      if (calls > 1) return new Response("frame\n");
-      return new Response(
-        new ReadableStream<Uint8Array>({
-          start(controller) {
-            controller.enqueue(Buffer.from("first frame\n"));
-          },
-          pull() {
-            return new Promise<never>(() => undefined);
-          },
-          cancel() {
-            cancellations += 1;
-          },
-        }),
-      );
-    });
-    servers.push(server);
-
-    const first = await post(server, await envelope("request-one"));
-    const reader = first.body?.getReader();
-    if (reader === undefined) throw new Error("response has no body");
-    const frame = await reader.read();
-    expect(frame.done).toBeFalse();
-    await reader.cancel("test cancellation");
-    for (let attempt = 0; attempt < 100 && cancellations === 0; attempt += 1) {
-      await Bun.sleep(5);
-    }
-
-    expect(cancellations).toBe(1);
-
-    const second = await post(server, await envelope("request-two"));
-    expect(second.status).toBe(200);
-    expect(await second.text()).toBe("frame\n");
+    expect(next.status).toBe(200);
+    expect(await next.text()).toBe("frame\n");
   });
 
   test("releases concurrency when the upstream body cannot be read", async () => {

@@ -16,6 +16,7 @@ export type RequestTrackerService = RequestTracker["Service"];
 export class MemoryRequestTracker implements RequestTrackerService {
   private readonly entries = new Map<string, { tenantId: string; expiresAt: number }>();
   private readonly tenantCounts = new Map<string, number>();
+  private lastObservedTime = Number.NEGATIVE_INFINITY;
 
   constructor(
     private readonly ttlMs: number,
@@ -29,7 +30,9 @@ export class MemoryRequestTracker implements RequestTrackerService {
   ): Effect.Effect<boolean, RelayTrackerCapacityExhausted> {
     const tracker = this;
     return Effect.gen(function* () {
-      const now = yield* Clock.currentTimeMillis;
+      const observedTime = yield* Clock.currentTimeMillis;
+      const now = Math.max(observedTime, tracker.lastObservedTime);
+      tracker.lastObservedTime = now;
       tracker.prune(now);
       const key = `${tenantId}\0${requestId}`;
       const entry = tracker.entries.get(key);
@@ -47,6 +50,7 @@ export class MemoryRequestTracker implements RequestTrackerService {
   }
 
   private prune(now: number): void {
+    // Fixed TTLs and nondecreasing observed time order entries by expiration.
     for (const [key, entry] of this.entries) {
       if (entry.expiresAt > now) break;
       this.entries.delete(key);
