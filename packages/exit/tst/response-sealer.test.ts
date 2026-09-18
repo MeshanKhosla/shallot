@@ -15,6 +15,36 @@ async function responsePublicKey(): Promise<CryptoKey> {
 }
 
 describe("encrypted response backpressure", () => {
+  test("rejects the stream once the provider exceeds maxResponseBytes", async () => {
+    const providerBody = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        controller.enqueue(Buffer.from("x".repeat(2048)));
+      },
+    });
+    const response = await sealProviderResponse(
+      new Response(providerBody),
+      await responsePublicKey(),
+      "00000000-0000-4000-8000-000000000002",
+      {
+        responsePaddingBytes: 64,
+        responseFlushMs: 5,
+        maxResponseBytes: 64,
+      },
+    );
+    const reader = response.body?.getReader();
+    expect(reader).toBeDefined();
+    expect((await reader?.read())?.done).toBeFalse();
+
+    let readError: unknown;
+    try {
+      await reader?.read();
+    } catch (error) {
+      readError = error;
+    }
+    expect(String(readError as Error | undefined)).toBe(
+      "Error: provider response is too large",
+    );
+  });
   test("cancels the provider body when the downstream consumer stops", async () => {
     let cancelled = false;
     const providerBody = new ReadableStream<Uint8Array>({
