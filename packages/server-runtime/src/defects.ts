@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { Cause, Context, Effect, Layer } from "effect";
+import { Cause, Console, Context, Effect, Layer } from "effect";
 
 export interface DefectDiagnostic {
   readonly component: string;
@@ -18,9 +18,7 @@ export const defectReporterLive = Layer.succeed(
   DefectReporter,
   DefectReporter.of({
     report: (diagnostic) =>
-      Effect.sync(() => console.error(JSON.stringify(diagnostic))).pipe(
-        Effect.ignoreCause,
-      ),
+      Console.error(JSON.stringify(diagnostic)).pipe(Effect.ignoreCause),
   }),
 );
 
