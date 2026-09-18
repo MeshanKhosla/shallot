@@ -1,8 +1,7 @@
 import { stopOnSignals } from "@shallot/server-runtime";
-import { loadConfig } from "./config.ts";
-import { createExitServer } from "./exit.ts";
+import { createExitApplication } from "./application.ts";
 
-const server = createExitServer(loadConfig());
+const server = createExitApplication();
 console.log(`shallot exit listening on http://${server.hostname}:${server.port}`);
 
 stopOnSignals("exit", server);

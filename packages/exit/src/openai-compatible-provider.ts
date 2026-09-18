@@ -1,6 +1,10 @@
 import { Context, Effect, Layer } from "effect";
 import { ProviderTimeout, ProviderTransportFailure } from "./errors.ts";
-import { LlmProvider, type LlmProviderService } from "./llm-provider.ts";
+import {
+  LlmProvider,
+  type LlmProviderPolicy,
+  type LlmProviderService,
+} from "./llm-provider.ts";
 import type { SanitizedChatRequest } from "./sanitize-request.ts";
 
 export type ProviderFetch = (input: URL, init: RequestInit) => Promise<Response>;
@@ -9,6 +13,7 @@ export interface OpenAICompatibleProviderConfig {
   url: URL;
   apiKey?: string;
   timeoutMs: number;
+  policy: LlmProviderPolicy;
 }
 
 export class ProviderTransport extends Context.Service<
@@ -24,6 +29,12 @@ export const providerTransportLive = Layer.succeed(ProviderTransport, {
   timeoutSignal: AbortSignal.timeout,
 });
 
+export function openAICompatibleProviderLive(
+  config: OpenAICompatibleProviderConfig,
+): Layer.Layer<LlmProvider> {
+  return openAICompatibleProviderLayer(config).pipe(Layer.provide(providerTransportLive));
+}
+
 export function openAICompatibleProviderLayer(
   config: OpenAICompatibleProviderConfig,
 ): Layer.Layer<LlmProvider, never, ProviderTransport> {
@@ -37,10 +48,14 @@ export function openAICompatibleProviderLayer(
 }
 
 class OpenAICompatibleProvider implements LlmProviderService {
+  readonly policy: LlmProviderPolicy;
+
   constructor(
     private readonly config: OpenAICompatibleProviderConfig,
     private readonly transport: ProviderTransport["Service"],
-  ) {}
+  ) {
+    this.policy = config.policy;
+  }
 
   complete(
     request: SanitizedChatRequest,

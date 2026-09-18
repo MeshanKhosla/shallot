@@ -24,10 +24,6 @@ import {
   exitErrorResponse,
 } from "./errors.ts";
 import { LlmProvider } from "./llm-provider.ts";
-import {
-  openAICompatibleProviderLayer,
-  providerTransportLive,
-} from "./openai-compatible-provider.ts";
 import { ReplayProtection, replayProtectionLayer } from "./replay-protection.ts";
 import { sealProviderResponse } from "./response-sealer.ts";
 import { sanitizeChatRequest } from "./sanitize-request.ts";
@@ -37,7 +33,7 @@ export type ExitServices = LlmProvider | ReplayProtection;
 
 export function createExitServer(
   config: ExitConfig,
-  services: Layer.Layer<ExitServices> = exitLive(config),
+  services: Layer.Layer<ExitServices>,
 ): Server<undefined> {
   const logger = createDebugLogger("exit");
   const runtime = ManagedRuntime.make(services);
@@ -58,13 +54,12 @@ export function createExitServer(
   return bindRuntimeLifecycle(server, runtime);
 }
 
-export function exitLive(config: ExitConfig): Layer.Layer<ExitServices> {
+export function exitLive(
+  config: ExitConfig,
+  provider: Layer.Layer<LlmProvider>,
+): Layer.Layer<ExitServices> {
   return Layer.mergeAll(
-    openAICompatibleProviderLayer({
-      url: config.llm.url,
-      apiKey: config.llm.apiKey,
-      timeoutMs: config.llm.timeoutMs,
-    }).pipe(Layer.provide(providerTransportLive)),
+    provider,
     replayProtectionLayer({
       ttlMs: config.replayTtlMs,
       maxEntries: config.replayMaxEntries,
@@ -99,10 +94,11 @@ export const handleExitRequest = Effect.fn("handleExitRequest")(function* (
   );
 
   const opened = yield* openEnvelope(envelope, config);
+  const provider = yield* LlmProvider;
   const sanitized = yield* expectedSync(
     () => {
       const plaintext = JSON.parse(opened.payload.toString("utf8"));
-      return sanitizeChatRequest(plaintext, config.llm.allowedModels);
+      return sanitizeChatRequest(plaintext, provider.policy.allowedModels);
     },
     (cause): cause is ExitInvalidRequest => cause instanceof ExitInvalidRequest,
   ).pipe(
@@ -116,7 +112,14 @@ export const handleExitRequest = Effect.fn("handleExitRequest")(function* (
       ),
     ),
     Effect.catch((error) =>
-      sealResponse(exitErrorResponse(error), opened, envelope.requestId, config, logger),
+      sealResponse(
+        exitErrorResponse(error),
+        opened,
+        envelope.requestId,
+        config,
+        provider.policy.maxResponseBytes,
+        logger,
+      ),
     ),
   );
   if (sanitized instanceof Response) return sanitized;
@@ -127,7 +130,6 @@ export const handleExitRequest = Effect.fn("handleExitRequest")(function* (
     return yield* new ExitReplayDetected();
   }
 
-  const provider = yield* LlmProvider;
   const providerResponse = yield* provider
     .complete(sanitized, req.signal)
     .pipe(Effect.catch((error) => Effect.succeed(encryptedProviderFailure(error))));
@@ -137,6 +139,7 @@ export const handleExitRequest = Effect.fn("handleExitRequest")(function* (
     opened,
     envelope.requestId,
     config,
+    provider.policy.maxResponseBytes,
     logger,
   );
 });
@@ -194,9 +197,20 @@ function sealResponse(
   opened: OpenedRequestContext,
   requestId: string,
   config: ExitConfig,
+  maxResponseBytes: number,
   logger: ReturnType<typeof createDebugLogger>,
 ): Effect.Effect<Response> {
   return Effect.promise(() =>
-    sealProviderResponse(response, opened.responsePublicKey, requestId, config, logger),
+    sealProviderResponse(
+      response,
+      opened.responsePublicKey,
+      requestId,
+      {
+        responsePaddingBytes: config.responsePaddingBytes,
+        responseFlushMs: config.responseFlushMs,
+        maxResponseBytes,
+      },
+      logger,
+    ),
   );
 }

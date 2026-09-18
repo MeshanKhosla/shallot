@@ -5,6 +5,7 @@ import type { SanitizedChatRequest } from "./sanitize-request.ts";
 export class LlmProvider extends Context.Service<
   LlmProvider,
   {
+    readonly policy: LlmProviderPolicy;
     complete(
       request: SanitizedChatRequest,
       clientSignal: AbortSignal,
@@ -14,10 +15,7 @@ export class LlmProvider extends Context.Service<
 
 export type LlmProviderService = LlmProvider["Service"];
 
-export interface LlmConfig {
-  url: URL;
-  apiKey?: string;
-  timeoutMs: number;
+export interface LlmProviderPolicy {
   allowedModels?: ReadonlySet<string>;
   maxResponseBytes: number;
 }

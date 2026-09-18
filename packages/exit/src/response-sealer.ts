@@ -14,7 +14,7 @@ import { ByteQueue } from "./byte-queue.ts";
 interface ResponseSealingConfig {
   responsePaddingBytes: number;
   responseFlushMs: number;
-  llm: { maxResponseBytes: number };
+  maxResponseBytes: number;
 }
 
 export async function sealProviderResponse(
@@ -35,7 +35,7 @@ export async function sealProviderResponse(
     providerResponse.body,
     maxPayloadBytes,
     config.responseFlushMs,
-    config.llm.maxResponseBytes,
+    config.maxResponseBytes,
     cancellation.signal,
   );
   let sentHead = false;

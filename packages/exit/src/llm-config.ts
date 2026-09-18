@@ -1,6 +1,6 @@
-import type { LlmConfig } from "./llm-provider.ts";
+import type { OpenAICompatibleProviderConfig } from "./openai-compatible-provider.ts";
 
-export function loadLlmConfig(): LlmConfig {
+export function loadLlmProviderConfig(): OpenAICompatibleProviderConfig {
   const providerUrl = process.env.LLM_PROVIDER_URL;
   if (!providerUrl) throw new Error("LLM_PROVIDER_URL is required");
 
@@ -12,8 +12,10 @@ export function loadLlmConfig(): LlmConfig {
     url: new URL(providerUrl),
     apiKey: process.env.LLM_PROVIDER_API_KEY,
     timeoutMs: positiveInteger("LLM_PROVIDER_TIMEOUT_MS", 60_000),
-    allowedModels: allowedModels ? new Set(allowedModels) : undefined,
-    maxResponseBytes: positiveInteger("LLM_MAX_RESPONSE_BYTES", 16 * 1024 * 1024),
+    policy: {
+      allowedModels: allowedModels ? new Set(allowedModels) : undefined,
+      maxResponseBytes: positiveInteger("LLM_MAX_RESPONSE_BYTES", 16 * 1024 * 1024),
+    },
   };
 }
 

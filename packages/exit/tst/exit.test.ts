@@ -39,12 +39,6 @@ function config(privateKeys: Map<string, KeyObject>): ExitConfig {
     port: 0,
     relayToken: "relay-token",
     privateKeys,
-    llm: {
-      url: new URL("https://provider.example/v1/chat/completions"),
-      timeoutMs: 1_000,
-      allowedModels: new Set(["test-model"]),
-      maxResponseBytes: 1024,
-    },
     maxEnvelopeBytes: 4096,
     responsePaddingBytes: 256,
     responseFlushMs: 1,
@@ -68,6 +62,10 @@ describe("Exit Effect runtime", () => {
     const sealed = await sealedRequest();
     let providerCalled = false;
     const provider: LlmProviderService = {
+      policy: {
+        allowedModels: new Set(["test-model"]),
+        maxResponseBytes: 1024,
+      },
       complete: () => {
         providerCalled = true;
         return Effect.succeed(Response.json({ choices: [] }));
@@ -94,6 +92,10 @@ describe("Exit Effect runtime", () => {
   test("converts an unexpected service defect without leaking it", async () => {
     const sealed = await sealedRequest();
     const provider: LlmProviderService = {
+      policy: {
+        allowedModels: new Set(["test-model"]),
+        maxResponseBytes: 1024,
+      },
       complete: () => Effect.succeed(Response.json({ choices: [] })),
     };
     const replayProtection = Layer.succeed(ReplayProtection, {

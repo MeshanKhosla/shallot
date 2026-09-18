@@ -10,6 +10,10 @@ import {
 const config = {
   url: new URL("https://llm.example/v1/chat/completions"),
   timeoutMs: 1_000,
+  policy: {
+    allowedModels: new Set(["test-model"]),
+    maxResponseBytes: 1024,
+  },
 };
 
 function complete(

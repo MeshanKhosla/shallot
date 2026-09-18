@@ -1,14 +1,16 @@
+export { createExitApplication } from "./application.ts";
 export { type ExitConfig, loadConfig } from "./config.ts";
 export { createExitServer, type ExitServices, exitLive } from "./exit.ts";
-export { loadLlmConfig } from "./llm-config.ts";
+export { loadLlmProviderConfig } from "./llm-config.ts";
 export {
-  type LlmConfig,
   LlmProvider,
+  type LlmProviderPolicy,
   type LlmProviderService,
 } from "./llm-provider.ts";
 export {
   type OpenAICompatibleProviderConfig,
   openAICompatibleProviderLayer,
+  openAICompatibleProviderLive,
   ProviderTransport,
   providerTransportLive,
 } from "./openai-compatible-provider.ts";

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { generateKeyPairSync } from "node:crypto";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { createSidecarServer } from "@shallot/client";
-import { createExitServer } from "@shallot/exit";
+import { createExitServer, exitLive, openAICompatibleProviderLive } from "@shallot/exit";
 import {
   createMockProviderServer,
   type ProviderObservation,
@@ -69,15 +69,22 @@ function setupGateway(options: { providerChunkDelayMs?: number } = {}) {
   );
   servers.push(provider);
 
-  const exit = createExitServer({
+  const exitConfig = {
     hostname: "127.0.0.1",
     port: 0,
     relayToken: EXIT_TOKEN,
     privateKeys: new Map([["test-key", exitKeys.privateKey]]),
-    llm: {
-      url: new URL(`http://127.0.0.1:${provider.port}/v1/chat/completions`),
-      apiKey: PROVIDER_TOKEN,
-      timeoutMs: 5_000,
+    maxEnvelopeBytes: 256 * 1024,
+    responsePaddingBytes: 512,
+    responseFlushMs: 1,
+    replayTtlMs: 60_000,
+    replayMaxEntries: 10_000,
+  };
+  const providerLayer = openAICompatibleProviderLive({
+    url: new URL(`http://127.0.0.1:${provider.port}/v1/chat/completions`),
+    apiKey: PROVIDER_TOKEN,
+    timeoutMs: 5_000,
+    policy: {
       allowedModels: new Set([
         "mock-text",
         "mock-stream",
@@ -87,12 +94,8 @@ function setupGateway(options: { providerChunkDelayMs?: number } = {}) {
       ]),
       maxResponseBytes: 256 * 1024,
     },
-    maxEnvelopeBytes: 256 * 1024,
-    responsePaddingBytes: 512,
-    responseFlushMs: 1,
-    replayTtlMs: 60_000,
-    replayMaxEntries: 10_000,
   });
+  const exit = createExitServer(exitConfig, exitLive(exitConfig, providerLayer));
   servers.push(exit);
 
   const relayConfig = {

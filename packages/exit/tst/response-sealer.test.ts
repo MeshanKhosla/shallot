@@ -32,7 +32,7 @@ describe("encrypted response backpressure", () => {
       {
         responsePaddingBytes: 64,
         responseFlushMs: 5,
-        llm: { maxResponseBytes: 1024 },
+        maxResponseBytes: 1024,
       },
     );
 
@@ -61,7 +61,7 @@ describe("encrypted response backpressure", () => {
       {
         responsePaddingBytes: 64,
         responseFlushMs: 5,
-        llm: { maxResponseBytes: 1024 },
+        maxResponseBytes: 1024,
       },
     );
     const reader = response.body?.getReader();

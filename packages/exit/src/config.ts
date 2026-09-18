@@ -1,14 +1,11 @@
 import type { KeyObject } from "node:crypto";
 import { parseX25519PrivateKey } from "@shallot/protocol";
-import { loadLlmConfig } from "./llm-config.ts";
-import type { LlmConfig } from "./llm-provider.ts";
 
 export interface ExitConfig {
   hostname: string;
   port: number;
   relayToken: string;
   privateKeys: ReadonlyMap<string, KeyObject>;
-  llm: LlmConfig;
   maxEnvelopeBytes: number;
   responsePaddingBytes: number;
   responseFlushMs: number;
@@ -29,7 +26,6 @@ export function loadConfig(): ExitConfig {
     port: positiveInteger("EXIT_PORT", 8786),
     relayToken,
     privateKeys: new Map([[keyId, parseX25519PrivateKey(privateKey)]]),
-    llm: loadLlmConfig(),
     maxEnvelopeBytes: positiveInteger("EXIT_MAX_ENVELOPE_BYTES", 3 * 1024 * 1024),
     responsePaddingBytes: positiveInteger("EXIT_RESPONSE_PADDING_BYTES", 4096),
     responseFlushMs: positiveInteger("EXIT_RESPONSE_FLUSH_MS", 25),
