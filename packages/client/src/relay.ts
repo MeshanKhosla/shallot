@@ -1,4 +1,5 @@
 import { SEALED_STREAM_CONTENT_TYPE, type SealedRequest } from "@shallot/protocol";
+import { keepDeadlineUntilStreamEnds, makeDeadline } from "@shallot/server-runtime";
 import { Context, Effect, Layer } from "effect";
 import {
   RelayEmptyResponse,
@@ -54,29 +55,36 @@ export function relayClientLayer(
       return RelayClient.of({
         forward: (request, envelope) =>
           Effect.gen(function* () {
+            const deadline = yield* makeDeadline(config.timeoutMs);
             const response = yield* Effect.tryPromise({
               try: (effectSignal) =>
                 transport.fetch(config.url, {
                   method: "POST",
                   headers: relayHeaders(request),
                   body: JSON.stringify(envelope),
-                  signal: AbortSignal.any([request.signal, effectSignal]),
+                  signal: AbortSignal.any([
+                    request.signal,
+                    effectSignal,
+                    deadline.signal,
+                  ]),
                 }),
-              catch: () => new RelayTransportFailure(),
-            }).pipe(
-              Effect.timeout(config.timeoutMs),
-              Effect.catchTag("TimeoutError", () => Effect.fail(new RelayTimeout())),
-            );
+              catch: () =>
+                deadline.expired ? new RelayTimeout() : new RelayTransportFailure(),
+            }).pipe(Effect.onError(() => deadline.cancel));
 
             if (!response.ok) {
               yield* Effect.promise(async () => {
                 await response.body?.cancel().catch(() => undefined);
               });
+              yield* deadline.cancel;
               return yield* new RelayRejected({ status: response.status });
             }
-            if (!response.body) return yield* new RelayEmptyResponse();
+            if (!response.body) {
+              yield* deadline.cancel;
+              return yield* new RelayEmptyResponse();
+            }
 
-            return response.body;
+            return keepDeadlineUntilStreamEnds(response.body, deadline);
           }),
       });
     }),

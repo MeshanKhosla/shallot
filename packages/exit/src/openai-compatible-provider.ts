@@ -67,18 +67,32 @@ class OpenAICompatibleProvider implements LlmProviderService {
       headers.set("authorization", `Bearer ${Redacted.value(this.config.apiKey)}`);
     }
 
-    return Effect.tryPromise({
-      try: (effectSignal) =>
-        this.transport.fetch(this.config.url, {
-          method: "POST",
-          headers,
-          body: JSON.stringify(request),
-          signal: AbortSignal.any([clientSignal, effectSignal]),
-        }),
-      catch: () => new ProviderTransportFailure(),
-    }).pipe(
-      Effect.timeout(this.config.timeoutMs),
-      Effect.catchTag("TimeoutError", () => Effect.fail(new ProviderTimeout())),
-    );
+    const { config, transport } = this;
+    return Effect.gen(function* () {
+      const deadline = yield* makeDeadline(config.timeoutMs);
+      const response = yield* Effect.tryPromise({
+        try: (effectSignal) =>
+          transport.fetch(config.url, {
+            method: "POST",
+            headers,
+            body: JSON.stringify(request),
+            signal: AbortSignal.any([clientSignal, effectSignal, deadline.signal]),
+          }),
+        catch: () =>
+          deadline.expired ? new ProviderTimeout() : new ProviderTransportFailure(),
+      }).pipe(Effect.onError(() => deadline.cancel));
+
+      if (!response.body) {
+        yield* deadline.cancel;
+        return response;
+      }
+      return new Response(keepDeadlineUntilStreamEnds(response.body, deadline), {
+        status: response.status,
+        statusText: response.statusText,
+        headers: response.headers,
+      });
+    });
   }
 }
+
+import { keepDeadlineUntilStreamEnds, makeDeadline } from "@shallot/server-runtime";

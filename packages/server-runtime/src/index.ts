@@ -4,6 +4,11 @@ export {
   positiveInteger,
 } from "./config.ts";
 export {
+  type Deadline,
+  keepDeadlineUntilStreamEnds,
+  makeDeadline,
+} from "./deadline.ts";
+export {
   type DefectDiagnostic,
   DefectReporter,
   defectReporterLive,

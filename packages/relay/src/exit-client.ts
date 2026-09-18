@@ -1,4 +1,5 @@
 import { SEALED_STREAM_CONTENT_TYPE } from "@shallot/protocol";
+import { keepDeadlineUntilStreamEnds, makeDeadline } from "@shallot/server-runtime";
 import { Context, Effect, Layer, Redacted } from "effect";
 import {
   ExitEmptyResponse,
@@ -60,28 +61,31 @@ export function exitClientLayer(
       return ExitClient.of({
         forward: (rawBody, clientSignal) =>
           Effect.gen(function* () {
+            const deadline = yield* makeDeadline(config.timeoutMs);
             const response = yield* Effect.tryPromise({
               try: (effectSignal) =>
                 transport.fetch(config.url, {
                   method: "POST",
                   headers,
                   body: rawBody,
-                  signal: AbortSignal.any([clientSignal, effectSignal]),
+                  signal: AbortSignal.any([clientSignal, effectSignal, deadline.signal]),
                 }),
-              catch: () => new ExitTransportFailure(),
-            }).pipe(
-              Effect.timeout(config.timeoutMs),
-              Effect.catchTag("TimeoutError", () => Effect.fail(new ExitTimeout())),
-            );
+              catch: () =>
+                deadline.expired ? new ExitTimeout() : new ExitTransportFailure(),
+            }).pipe(Effect.onError(() => deadline.cancel));
 
             if (!response.ok) {
               yield* Effect.promise(async () => {
                 await response.body?.cancel().catch(() => undefined);
               });
+              yield* deadline.cancel;
               return yield* new ExitRejected({ status: response.status });
             }
-            if (!response.body) return yield* new ExitEmptyResponse();
-            return response.body;
+            if (!response.body) {
+              yield* deadline.cancel;
+              return yield* new ExitEmptyResponse();
+            }
+            return keepDeadlineUntilStreamEnds(response.body, deadline);
           }),
       });
     }),
