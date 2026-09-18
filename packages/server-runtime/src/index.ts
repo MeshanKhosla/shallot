@@ -13,5 +13,5 @@ export {
   bindRuntimeLifecycle,
   type DisposableRuntime,
   type EffectServer,
-  stopOnSignals,
+  runServer,
 } from "./lifecycle.ts";

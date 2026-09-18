@@ -1,10 +1,4 @@
-import { stopOnSignals } from "@shallot/server-runtime";
-import { Effect } from "effect";
+import { runServer } from "@shallot/server-runtime";
 import { createMockProviderApplication } from "./application.ts";
 
-const server = await Effect.runPromise(createMockProviderApplication);
-console.log(
-  `shallot mock provider listening on http://${server.hostname}:${server.port}`,
-);
-
-stopOnSignals("mock-provider", server);
+await runServer("mock provider", createMockProviderApplication);

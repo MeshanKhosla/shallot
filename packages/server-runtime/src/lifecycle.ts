@@ -1,4 +1,5 @@
 import type { Server } from "bun";
+import { Effect } from "effect";
 
 export interface EffectServer extends Server<undefined> {
   stop(closeActiveConnections?: boolean): Promise<void>;
@@ -45,16 +46,35 @@ export function bindRuntimeLifecycle(
   return server;
 }
 
-export function stopOnSignals(component: string, server: EffectServer): void {
-  const shutdown = async () => {
-    try {
-      await server.stop(true);
-    } catch {
-      console.error(JSON.stringify({ component, event: "shutdown.failed" }));
-      process.exitCode = 1;
-    }
-  };
-
-  process.once("SIGINT", () => void shutdown());
-  process.once("SIGTERM", () => void shutdown());
+export function runServer<E>(
+  component: string,
+  application: Effect.Effect<EffectServer, E>,
+): Promise<void> {
+  return Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const server = yield* Effect.acquireRelease(
+          application,
+          (server: EffectServer) => Effect.promise(() => server.stop(true)),
+        );
+        yield* Effect.sync(() =>
+          console.log(
+            `shallot ${component} listening on http://${server.hostname}:${server.port}`,
+          ),
+        );
+        yield* waitForShutdownSignal;
+      }),
+    ),
+  );
 }
+
+const waitForShutdownSignal = Effect.callback<void>((resume) => {
+  const shutdown = () => resume(Effect.void);
+  process.once("SIGINT", shutdown);
+  process.once("SIGTERM", shutdown);
+
+  return Effect.sync(() => {
+    process.off("SIGINT", shutdown);
+    process.off("SIGTERM", shutdown);
+  });
+});
