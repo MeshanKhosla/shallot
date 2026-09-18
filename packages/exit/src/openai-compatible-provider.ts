@@ -57,7 +57,6 @@ class OpenAICompatibleProvider implements LlmProviderService {
 
   complete(
     request: SanitizedChatRequest,
-    clientSignal: AbortSignal,
   ): Effect.Effect<Response, ProviderTimeout | ProviderTransportFailure> {
     const headers = new Headers({
       accept: request.stream === true ? "text/event-stream" : "application/json",
@@ -76,7 +75,7 @@ class OpenAICompatibleProvider implements LlmProviderService {
             method: "POST",
             headers,
             body: JSON.stringify(request),
-            signal: AbortSignal.any([clientSignal, effectSignal, deadline.signal]),
+            signal: AbortSignal.any([effectSignal, deadline.signal]),
           }),
         catch: () =>
           deadline.expired ? new ProviderTimeout() : new ProviderTransportFailure(),

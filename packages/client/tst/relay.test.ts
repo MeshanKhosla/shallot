@@ -13,7 +13,6 @@ import {
 async function setup(fetch: SidecarFetch): Promise<{
   config: SidecarConfig;
   fetch: SidecarFetch;
-  request: Request;
   envelope: Awaited<ReturnType<typeof sealRequest>>["envelope"];
 }> {
   const keys = generateKeyPairSync("x25519");
@@ -37,7 +36,6 @@ async function setup(fetch: SidecarFetch): Promise<{
       maxResponseBytes: 1024,
     },
     fetch,
-    request: new Request("http://sidecar.test/v1/chat/completions"),
     envelope: sealed.envelope,
   };
 }
@@ -45,12 +43,11 @@ async function setup(fetch: SidecarFetch): Promise<{
 function forward(
   config: SidecarConfig,
   transport: RelayTransport["Service"],
-  request: Request,
   envelope: Awaited<ReturnType<typeof sealRequest>>["envelope"],
 ) {
   return Effect.gen(function* () {
     const client = yield* RelayClient;
-    return yield* client.forward(request, envelope);
+    return yield* client.forward(null, envelope);
   }).pipe(
     Effect.provide(
       relayClientLayer({
@@ -84,12 +81,7 @@ describe("Sidecar Relay client", () => {
     );
     const cancellation = new AbortController();
     const result = Effect.runPromise(
-      forward(
-        harness.config,
-        { fetch: harness.fetch },
-        harness.request,
-        harness.envelope,
-      ),
+      forward(harness.config, { fetch: harness.fetch }, harness.envelope),
       { signal: cancellation.signal },
     );
 
@@ -113,7 +105,6 @@ describe("Sidecar Relay client", () => {
         forward(
           { ...harness.config, relayTimeoutMs: 1 },
           { fetch: harness.fetch },
-          harness.request,
           harness.envelope,
         ),
       ),

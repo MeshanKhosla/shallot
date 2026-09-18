@@ -28,7 +28,7 @@ export class RelayClient extends Context.Service<
   RelayClient,
   {
     forward(
-      request: Request,
+      authorization: string | null,
       envelope: SealedRequest,
     ): Effect.Effect<ReadableStream<Uint8Array>, RelayClientError>;
   }
@@ -53,20 +53,16 @@ export function relayClientLayer(
     Effect.gen(function* () {
       const transport = yield* RelayTransport;
       return RelayClient.of({
-        forward: (request, envelope) =>
+        forward: (authorization, envelope) =>
           Effect.gen(function* () {
             const deadline = yield* makeDeadline(config.timeoutMs);
             const response = yield* Effect.tryPromise({
               try: (effectSignal) =>
                 transport.fetch(config.url, {
                   method: "POST",
-                  headers: relayHeaders(request),
+                  headers: relayHeaders(authorization),
                   body: JSON.stringify(envelope),
-                  signal: AbortSignal.any([
-                    request.signal,
-                    effectSignal,
-                    deadline.signal,
-                  ]),
+                  signal: AbortSignal.any([effectSignal, deadline.signal]),
                 }),
               catch: () =>
                 deadline.expired ? new RelayTimeout() : new RelayTransportFailure(),
@@ -91,13 +87,11 @@ export function relayClientLayer(
   );
 }
 
-function relayHeaders(req: Request): Headers {
+function relayHeaders(authorization: string | null): Headers {
   const headers = new Headers({
     accept: SEALED_STREAM_CONTENT_TYPE,
     "content-type": "application/json",
   });
-  const authorization = req.headers.get("authorization");
-
   if (authorization) headers.set("authorization", authorization);
   return headers;
 }

@@ -20,7 +20,7 @@ const config = {
 function forward(exitTransport: ExitTransport["Service"]) {
   return Effect.gen(function* () {
     const client = yield* ExitClient;
-    return yield* client.forward("{}", new AbortController().signal);
+    return yield* client.forward("{}");
   }).pipe(
     Effect.provide(
       exitClientLayer(config).pipe(
@@ -75,7 +75,7 @@ describe("Relay Exit client", () => {
       Effect.flip(
         Effect.gen(function* () {
           const client = yield* ExitClient;
-          return yield* client.forward("{}", new AbortController().signal);
+          return yield* client.forward("{}");
         }).pipe(
           Effect.provide(
             exitClientLayer({ ...config, timeoutMs: 1 }).pipe(

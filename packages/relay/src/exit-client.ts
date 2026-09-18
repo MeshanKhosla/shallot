@@ -28,10 +28,7 @@ export interface ExitClientConfig {
 export class ExitClient extends Context.Service<
   ExitClient,
   {
-    forward(
-      rawBody: string,
-      clientSignal: AbortSignal,
-    ): Effect.Effect<ReadableStream<Uint8Array>, ExitClientError>;
+    forward(rawBody: string): Effect.Effect<ReadableStream<Uint8Array>, ExitClientError>;
   }
 >()("@shallot/relay/ExitClient") {}
 
@@ -59,7 +56,7 @@ export function exitClientLayer(
     Effect.gen(function* () {
       const transport = yield* ExitTransport;
       return ExitClient.of({
-        forward: (rawBody, clientSignal) =>
+        forward: (rawBody) =>
           Effect.gen(function* () {
             const deadline = yield* makeDeadline(config.timeoutMs);
             const response = yield* Effect.tryPromise({
@@ -68,7 +65,7 @@ export function exitClientLayer(
                   method: "POST",
                   headers,
                   body: rawBody,
-                  signal: AbortSignal.any([clientSignal, effectSignal, deadline.signal]),
+                  signal: AbortSignal.any([effectSignal, deadline.signal]),
                 }),
               catch: () =>
                 deadline.expired ? new ExitTimeout() : new ExitTransportFailure(),

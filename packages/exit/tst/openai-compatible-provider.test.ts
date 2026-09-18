@@ -19,10 +19,11 @@ const config = {
 function complete(fetch: ProviderFetch, apiKey?: string, timeoutMs = config.timeoutMs) {
   return Effect.gen(function* () {
     const provider = yield* LlmProvider;
-    return yield* provider.complete(
-      { model: "test-model", messages: [], stream: true },
-      new AbortController().signal,
-    );
+    return yield* provider.complete({
+      model: "test-model",
+      messages: [],
+      stream: true,
+    });
   }).pipe(
     Effect.provide(
       openAICompatibleProviderLayer({

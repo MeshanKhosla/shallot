@@ -121,7 +121,7 @@ export const handleExitRequest = Effect.fn("exit.request")(function* (
     );
 
     const providerResponse = yield* provider
-      .complete(sanitized, req.signal)
+      .complete(sanitized)
       .pipe(Effect.catch((error) => Effect.succeed(encryptedProviderFailure(error))));
 
     return yield* sealResponse(

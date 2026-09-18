@@ -125,7 +125,7 @@ export const handleRelayRequest = Effect.fn("relay.request")(function* (
     }
 
     const exitClient = yield* ExitClient;
-    const responseBody = yield* exitClient.forward(rawBody, req.signal);
+    const responseBody = yield* exitClient.forward(rawBody);
     const observer = yield* RelayObserver;
     yield* Effect.sync(() => {
       const forwardedHeaders = new Headers({

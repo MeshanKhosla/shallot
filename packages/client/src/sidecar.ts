@@ -95,7 +95,10 @@ export const handleSidecarRequest = Effect.fn("sidecar.request")(function* (
   );
 
   const relayClient = yield* RelayClient;
-  const relayBody = yield* relayClient.forward(req, sealed.envelope);
+  const relayBody = yield* relayClient.forward(
+    req.headers.get("authorization"),
+    sealed.envelope,
+  );
   const createResponse = () =>
     chat.value.stream === true
       ? createStreamingResponse(

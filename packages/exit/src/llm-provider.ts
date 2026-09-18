@@ -6,10 +6,7 @@ export class LlmProvider extends Context.Service<
   LlmProvider,
   {
     readonly policy: LlmProviderPolicy;
-    complete(
-      request: SanitizedChatRequest,
-      clientSignal: AbortSignal,
-    ): Effect.Effect<Response, ProviderFailure>;
+    complete(request: SanitizedChatRequest): Effect.Effect<Response, ProviderFailure>;
   }
 >()("@shallot/exit/LlmProvider") {}
 

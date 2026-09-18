@@ -8,6 +8,8 @@ export interface Deadline {
 
 export function makeDeadline(timeoutMs: number): Effect.Effect<Deadline> {
   return Effect.gen(function* () {
+    // This signal follows the returned Web Stream, which can outlive this Effect.
+    // Effect.abortSignal only represents the current fiber's interruption.
     const controller = new AbortController();
     const fiber = yield* Effect.sleep(timeoutMs).pipe(
       Effect.tap(() => Effect.sync(() => controller.abort("upstream request timed out"))),

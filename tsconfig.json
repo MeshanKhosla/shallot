@@ -25,7 +25,17 @@
 
     "plugins": [
       {
-        "name": "@effect/language-service"
+        "name": "@effect/language-service",
+        "overrides": [
+          {
+            "include": ["packages/server-runtime/src/deadline.ts"],
+            "options": {
+              "diagnosticSeverity": {
+                "abortControllerInEffect": "off"
+              }
+            }
+          }
+        ]
       }
     ],
 
