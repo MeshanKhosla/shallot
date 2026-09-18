@@ -173,6 +173,11 @@ interface DecryptedFrame {
   payload: Buffer;
 }
 
+/**
+ * Reads bounded NDJSON frames, opens the response HPKE context from frame zero,
+ * and authenticates each frame in sequence. Frame count and plaintext limits
+ * are checked after decryption because padding hides the plaintext size.
+ */
 async function* decryptResponseFrames(
   body: ReadableStream<Uint8Array>,
   responsePrivateKey: CryptoKey,
@@ -195,6 +200,8 @@ async function* decryptResponseFrames(
 
     const frame = parseFrame(line);
     if (!opener) {
+      // HPKE sends its encapsulated key once. Later frames reuse the response
+      // context created from the first frame.
       if (!frame.encapsulatedKey) {
         throw new Error("first response frame is missing its encapsulated key");
       }
@@ -237,6 +244,11 @@ interface OpenedResponse {
   cancel(): Promise<void>;
 }
 
+/**
+ * Opens and validates the response head before any HTTP response reaches the
+ * caller. The returned data generator then permits only data frames and owns
+ * cancellation of the encrypted upstream body.
+ */
 async function openEncryptedResponse(
   body: ReadableStream<Uint8Array>,
   responsePrivateKey: CryptoKey,
@@ -262,6 +274,8 @@ async function openEncryptedResponse(
     }
     head = decodeResponseHead(first.value.payload);
   } catch (error) {
+    // A bad head cannot produce a trustworthy status or content type, so stop
+    // the encrypted stream before returning control to the HTTP adapter.
     cancellation.abort("invalid encrypted response head");
     await frames.return(undefined).catch(() => undefined);
     throw error;

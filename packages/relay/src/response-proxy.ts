@@ -1,5 +1,10 @@
 import type { RequestPermit } from "./concurrency-limiter.ts";
 
+/**
+ * Proxies an encrypted response without buffering it. The stream owns the
+ * Relay concurrency permit and releases it once on completion, failure, or
+ * downstream cancellation.
+ */
 export function proxyResponseBody(
   body: ReadableStream<Uint8Array>,
   permit: RequestPermit,

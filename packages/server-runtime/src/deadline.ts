@@ -26,6 +26,11 @@ export function makeDeadline(timeoutMs: number): Effect.Effect<Deadline> {
   });
 }
 
+/**
+ * Keeps an upstream deadline active for the lifetime of a returned Web Stream.
+ * The deadline cannot end with the request Effect because the HTTP body may be
+ * consumed after the server has sent its headers.
+ */
 export function keepDeadlineUntilStreamEnds(
   body: ReadableStream<Uint8Array>,
   deadline: Deadline,

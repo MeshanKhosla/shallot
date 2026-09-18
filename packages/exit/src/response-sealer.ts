@@ -17,6 +17,15 @@ interface ResponseSealingConfig {
   maxResponseBytes: number;
 }
 
+/**
+ * Converts a provider response into the encrypted frame stream consumed by the
+ * Sidecar. Frame zero authenticates the provider status and content type. Data
+ * frames are padded to a fixed size and pulled only when the downstream reader
+ * asks for them.
+ *
+ * Cancelling the returned body cancels the provider body and releases its
+ * reader lock.
+ */
 export async function sealProviderResponse(
   providerResponse: Response,
   responsePublicKey: CryptoKey,
@@ -47,6 +56,8 @@ export async function sealProviderResponse(
     async pull(controller) {
       try {
         if (!sentHead) {
+          // The Sidecar needs authenticated HTTP metadata before it can expose
+          // the response body to the AI SDK.
           logger.debug("provider.response.received", {
             requestId,
             status: providerResponse.status,
@@ -75,6 +86,8 @@ export async function sealProviderResponse(
         }
 
         const chunk = await chunks.next();
+        // An empty final frame authenticates the end of the stream, including
+        // a provider response with no body.
         const payload = chunk.done ? new Uint8Array() : chunk.value;
         logger.debug("provider.response.chunk", {
           requestId,
@@ -112,8 +125,12 @@ export async function sealProviderResponse(
     async cancel(reason) {
       if (finished) return;
       cancellation.abort(reason);
+      // Returning the generator runs its finally block, which cancels the
+      // provider reader and releases its lock.
       await chunks.return(undefined);
       if (providerResponse.body && !providerResponse.body.locked) {
+        // The generator may not have started if the client cancelled after the
+        // head frame, so cancel the untouched body here as well.
         await providerResponse.body.cancel(reason).catch(() => undefined);
       }
     },
@@ -156,6 +173,14 @@ async function waitForRead(
   });
 }
 
+/**
+ * Rechunks the provider body into payloads that fit inside padded response
+ * frames. Full payloads are emitted immediately. A partial payload is emitted
+ * after the flush interval so a slow token stream does not stall.
+ *
+ * The generator keeps at most one provider read in flight and rejects the
+ * stream as soon as the cumulative plaintext limit is exceeded.
+ */
 async function* coalesceResponseBody(
   body: ReadableStream<Uint8Array> | null,
   maxFramePayloadBytes: number,
@@ -187,6 +212,8 @@ async function* coalesceResponseBody(
         queue.length > 0 ? flushMs : undefined,
       );
       if (event.type === "timeout") {
+        // The pending read still owns the next provider chunk. Reuse it after
+        // flushing instead of starting a second read on the same reader.
         yield queue.take(maxFramePayloadBytes);
         continue;
       }
@@ -198,6 +225,7 @@ async function* coalesceResponseBody(
       if (!event.result.value) throw new Error("provider stream returned no data");
       totalBytes += event.result.value.byteLength;
       if (totalBytes > maxResponseBytes) {
+        // Stop the source before reporting the limit failure downstream.
         await reader.cancel("provider response exceeded the configured limit");
         throw new Error("provider response is too large");
       }
