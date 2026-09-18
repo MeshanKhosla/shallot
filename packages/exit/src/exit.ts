@@ -59,7 +59,6 @@ export function createExitServer(
       handleExitRequest(req, config, logger).pipe(
         Effect.catch((error) => Effect.succeed(exitErrorResponse(error))),
         Effect.catchCause(recoverDefect("exit", exitDefectResponse)),
-        Effect.withSpan("exit.request"),
       ),
   ).pipe(Effect.provide(dependencies));
 }
@@ -77,7 +76,7 @@ export function exitLive(
   );
 }
 
-export const handleExitRequest = Effect.fnUntraced(function* (
+export const handleExitRequest = Effect.fn("exit.request")(function* (
   req: Request,
   config: ExitConfig,
   logger = createDebugLogger("exit"),

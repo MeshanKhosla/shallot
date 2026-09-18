@@ -90,6 +90,7 @@ describe("local stack", () => {
     expect(byName.sidecar?.SIDECAR_RELAY_TIMEOUT_MS).toBe("600000");
     expect(byName.relay?.RELAY_EXIT_TIMEOUT_MS).toBe("600000");
     expect(byName.exit?.LLM_PROVIDER_TIMEOUT_MS).toBe("600000");
+    expect(byName.provider?.SHALLOT_EFFECT_DEVTOOLS).toBe("true");
   });
 
   test("preserves explicit timeout overrides while debugging", () => {

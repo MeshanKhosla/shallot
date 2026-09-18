@@ -46,7 +46,6 @@ export function createSidecarServer(
       handleSidecarRequest(req, config, logger).pipe(
         Effect.catch((error) => Effect.succeed(sidecarErrorResponse(error))),
         Effect.catchCause(recoverDefect("sidecar", sidecarDefectResponse)),
-        Effect.withSpan("sidecar.request"),
       ),
   ).pipe(Effect.provide(dependencies));
 }
@@ -58,7 +57,7 @@ export function sidecarLive(config: SidecarConfig): Layer.Layer<RelayClient> {
   }).pipe(Layer.provide(relayTransportLive));
 }
 
-export const handleSidecarRequest = Effect.fnUntraced(function* (
+export const handleSidecarRequest = Effect.fn("sidecar.request")(function* (
   req: Request,
   config: SidecarConfig,
   logger = createDebugLogger("sidecar"),

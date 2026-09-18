@@ -9,9 +9,9 @@ describe("Relay concurrency limiter", () => {
   test("releases a permit exactly once", async () => {
     const program = Effect.gen(function* () {
       const limiter = yield* ConcurrencyLimiter;
-      const permit = yield* limiter.acquire();
+      const permit = yield* limiter.acquire;
       expect(yield* limiter.activeCount).toBe(1);
-      expect((yield* Effect.flip(limiter.acquire()))._tag).toBe(
+      expect((yield* Effect.flip(limiter.acquire))._tag).toBe(
         "RelayConcurrencyExhausted",
       );
 

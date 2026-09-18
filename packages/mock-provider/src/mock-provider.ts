@@ -45,12 +45,11 @@ export function createMockProviderServer(
       handleMockProviderRequest(req, config, logger, hooks).pipe(
         Effect.catch((error) => Effect.succeed(providerErrorResponse(error))),
         Effect.catchCause(recoverDefect("mock-provider", providerDefectResponse)),
-        Effect.withSpan("provider.request"),
       ),
   ).pipe(Effect.provide(options.diagnostics ?? defectReporterLive));
 }
 
-export const handleMockProviderRequest = Effect.fnUntraced(function* (
+export const handleMockProviderRequest = Effect.fn("provider.request")(function* (
   req: Request,
   config: MockProviderConfig,
   logger = createDebugLogger("provider"),

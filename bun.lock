@@ -9,7 +9,7 @@
         "@effect/tsgo": "0.45.0",
         "@types/bun": "latest",
         "concurrently": "^10.0.5",
-        "typescript": "latest",
+        "typescript": "7.0.2",
       },
     },
     "packages/client": {

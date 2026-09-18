@@ -96,6 +96,11 @@ export function createLocalServices(
   const common = {
     ...environment,
     SHALLOT_LOG_LEVEL: environment.SHALLOT_LOG_LEVEL ?? "debug",
+    ...(options.inspect
+      ? {
+          SHALLOT_EFFECT_DEVTOOLS: environment.SHALLOT_EFFECT_DEVTOOLS ?? "true",
+        }
+      : {}),
   };
 
   return [

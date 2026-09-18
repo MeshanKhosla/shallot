@@ -8,7 +8,7 @@ export interface RequestPermit {
 export class ConcurrencyLimiter extends Context.Service<
   ConcurrencyLimiter,
   {
-    acquire(): Effect.Effect<RequestPermit, RelayConcurrencyExhausted>;
+    readonly acquire: Effect.Effect<RequestPermit, RelayConcurrencyExhausted>;
     readonly activeCount: Effect.Effect<number>;
   }
 >()("@shallot/relay/ConcurrencyLimiter") {}
@@ -21,21 +21,20 @@ export function concurrencyLimiterLayer(
     Effect.sync(() => {
       let activeRequests = 0;
       return ConcurrencyLimiter.of({
-        acquire: () =>
-          Effect.suspend(() => {
-            if (activeRequests >= maxConcurrentRequests) {
-              return Effect.fail(new RelayConcurrencyExhausted());
-            }
-            activeRequests += 1;
-            let released = false;
-            return Effect.succeed({
-              release() {
-                if (released) return;
-                released = true;
-                activeRequests -= 1;
-              },
-            });
-          }),
+        acquire: Effect.suspend(() => {
+          if (activeRequests >= maxConcurrentRequests) {
+            return Effect.fail(new RelayConcurrencyExhausted());
+          }
+          activeRequests += 1;
+          let released = false;
+          return Effect.succeed({
+            release() {
+              if (released) return;
+              released = true;
+              activeRequests -= 1;
+            },
+          });
+        }),
         activeCount: Effect.sync(() => activeRequests),
       });
     }),

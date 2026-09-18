@@ -15,12 +15,12 @@ export {
   recoverDefect,
 } from "./defects.ts";
 export {
-  type LaunchedHttpServer,
-  launchHttpServer,
-  runServer,
-} from "./lifecycle.ts";
-export {
   type HttpServerConfig,
   type RunningHttpServer,
   serveWebHandler,
 } from "./http-server.ts";
+export {
+  type LaunchedHttpServer,
+  launchHttpServer,
+  runServer,
+} from "./lifecycle.ts";

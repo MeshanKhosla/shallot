@@ -1,12 +1,13 @@
 import { BunRuntime } from "@effect/platform-bun";
-import { Console, Effect, Exit, Scope } from "effect";
+import { Config, Console, Effect, Exit, Scope } from "effect";
+import { DevTools } from "effect/unstable/devtools";
 import type { RunningHttpServer } from "./http-server.ts";
 
 export function runServer<E>(
   component: string,
   application: Effect.Effect<RunningHttpServer, E, Scope.Scope>,
 ): void {
-  Effect.scoped(
+  const program = Effect.scoped(
     Effect.gen(function* () {
       const server = yield* application;
       yield* Console.log(
@@ -14,7 +15,19 @@ export function runServer<E>(
       );
       return yield* Effect.never;
     }),
-  ).pipe(BunRuntime.runMain);
+  );
+
+  Effect.gen(function* () {
+    const enabled = yield* Config.Boolean("SHALLOT_EFFECT_DEVTOOLS").pipe(
+      Config.withDefault(false),
+    );
+    if (!enabled) return yield* program;
+
+    const url = yield* Config.String("SHALLOT_EFFECT_DEVTOOLS_URL").pipe(
+      Config.withDefault("ws://127.0.0.1:34437"),
+    );
+    return yield* program.pipe(Effect.provide(DevTools.layer(url)));
+  }).pipe(BunRuntime.runMain);
 }
 
 export interface LaunchedHttpServer extends RunningHttpServer {

@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { Effect } from "effect";
-import { launchHttpServer } from "../src/lifecycle.ts";
 import { serveWebHandler } from "../src/http-server.ts";
+import { launchHttpServer } from "../src/lifecycle.ts";
 
 test("a launched HTTP server closes its Effect scope once", async () => {
   let finalized = 0;

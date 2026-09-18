@@ -8,6 +8,6 @@ The Relay can see the tenant identity and encrypted request metadata. It cannot
 decrypt the prompt or the response. It replaces the tenant credential with a
 service credential before calling the Exit.
 
-The package exports the Bun server factory, Effect application, tenant
+The package exports the Effect Platform server program, application, tenant
 authentication, request tracking, and observation services. Tests can replace
 each service with an Effect Layer.

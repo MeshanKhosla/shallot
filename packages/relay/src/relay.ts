@@ -62,7 +62,6 @@ export function createRelayServer(
       handleRelayRequest(req, config, logger).pipe(
         Effect.catch((error) => Effect.succeed(relayErrorResponse(error))),
         Effect.catchCause(recoverDefect("relay", relayDefectResponse)),
-        Effect.withSpan("relay.request"),
       ),
   ).pipe(Effect.provide(dependencies));
 }
@@ -88,7 +87,7 @@ export function relayLive(
   );
 }
 
-export const handleRelayRequest = Effect.fnUntraced(function* (
+export const handleRelayRequest = Effect.fn("relay.request")(function* (
   req: Request,
   config: RelayConfig,
   logger = createDebugLogger("relay"),
@@ -106,7 +105,7 @@ export const handleRelayRequest = Effect.fnUntraced(function* (
   const tenant = yield* authenticator.authenticate(req.headers.get("authorization"));
 
   const limiter = yield* ConcurrencyLimiter;
-  const permit = yield* limiter.acquire();
+  const permit = yield* limiter.acquire;
   let handedOff = false;
   return yield* Effect.gen(function* () {
     const { envelope, rawBody } = yield* readEnvelope(req, config.maxEnvelopeBytes);

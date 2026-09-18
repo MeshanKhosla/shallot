@@ -19,7 +19,7 @@ export const defectReporterLive = Layer.succeed(
   DefectReporter.of({
     report: (diagnostic) =>
       Effect.sync(() => console.error(JSON.stringify(diagnostic))).pipe(
-        Effect.catchCause(() => Effect.void),
+        Effect.ignoreCause,
       ),
   }),
 );

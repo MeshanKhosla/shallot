@@ -1,8 +1,9 @@
 # Effect server migration
 
-Shallot uses Effect 4 at the four HTTP server boundaries while keeping the
-protocol and cryptographic code independent. Fetch `Request` and `Response`,
-Web Streams, and `Bun.serve` remain the external adapters.
+Shallot uses Effect 4 throughout the four server applications while keeping the
+protocol and cryptographic code independent. `BunHttpServer` owns the HTTP
+listeners. Fetch `Request` and `Response` values and Web Streams remain the
+adapters at the protocol and AI SDK boundaries.
 
 ## Dependency graph
 
@@ -60,15 +61,15 @@ replay state.
 
 ## Runtime boundary
 
-Each `create*Server` function builds one `ManagedRuntime` and reuses it for all
-requests. The Bun `fetch` callback runs one request Effect with the incoming
-request signal. Each application loads configuration and builds its Layers as
-an Effect. The process runner acquires the server in an Effect scope, waits for
-`SIGINT` or `SIGTERM`, then stops Bun and disposes the managed runtime. The
-idempotent server finalizer still disposes the runtime if Bun shutdown fails.
+Each `create*Server` function constructs an Effect Platform `BunHttpServer` in
+the current Scope and serves one Effect request program. The Bun adapter
+interrupts that request fiber when the client disconnects. Each application
+loads configuration and builds its Layers as an Effect. `BunRuntime.runMain`
+handles `SIGINT` and `SIGTERM`; interruption closes the Scope and stops the HTTP
+server.
 
 ```text
-Bun HTTP adapter
+Effect Platform Bun HTTP server
   -> Effect request program
        -> services supplied by Layers
        -> typed failures before HTTP headers
@@ -152,10 +153,11 @@ debug records may contain tenant identity but never plaintext. Exit debug
 records may contain request content but never tenant identity. No trace context
 is forwarded between Relay and Exit.
 
-The request programs do not add Effect log annotations or spans. Those records
-had no configured sink and added work without changing the current debug logs.
-Effect tracing belongs in a later change with a real backend and an explicit
-policy for the metadata each machine may export.
+Each top-level request program has a named Effect span. In debug mode, each
+process connects to the local Effect DevTools server so VS Code can display its
+fibers, Context, spans, and metrics. Spans do not carry tenant IDs, prompts,
+ciphertext, credentials, keys, or a cross-service trace identifier. Shallot does
+not propagate trace context across the Relay-to-Exit privacy boundary.
 
 ## Intentionally outside Effect
 
@@ -163,11 +165,12 @@ policy for the metadata each machine may export.
 parsers, padding, frame authentication, response metadata, and bounded protocol
 helpers retain their current APIs and byte behavior.
 
-Fetch objects, Bun servers, and Web Streams remain network adapters. Response
-streams outlive the request Effect after Bun sends headers, so their pull,
-backpressure, cancellation, and reader cleanup stay in the Web Stream API. The
-Relay's fail-fast concurrency permit is released by that stream finalizer for
-the same reason. Response coalescing keeps its native timer beside the pending
+Fetch objects and Web Streams remain protocol adapters. The Vercel AI SDK and
+HPKE framing code consume those native interfaces. Response streams outlive the
+request Effect after the server sends headers, so their pull, backpressure,
+cancellation, and reader cleanup stay in the Web Stream API. The Relay's
+fail-fast concurrency permit is released by that stream finalizer for the same
+reason. Response coalescing keeps its native timer beside the pending
 `reader.read()` race instead of starting a new Effect runtime on every pull.
 
 Request sanitization, constant-time token comparison, byte queues, and
