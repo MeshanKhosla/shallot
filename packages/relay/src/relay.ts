@@ -7,7 +7,12 @@ import {
   SEALED_STREAM_CONTENT_TYPE,
   type SealedRequest,
 } from "@shallot/protocol";
-import { bindRuntimeLifecycle, recoverDefect } from "@shallot/server-runtime";
+import {
+  bindRuntimeLifecycle,
+  DefectReporter,
+  defectReporterLive,
+  recoverDefect,
+} from "@shallot/server-runtime";
 import type { Server } from "bun";
 import { Effect, Layer, ManagedRuntime, Redacted } from "effect";
 import { ConcurrencyLimiter, concurrencyLimiterLayer } from "./concurrency-limiter.ts";
@@ -37,9 +42,10 @@ export type RelayServices =
 export function createRelayServer(
   config: RelayConfig,
   services: Layer.Layer<RelayServices> = relayLive(config),
+  diagnostics: Layer.Layer<DefectReporter> = defectReporterLive,
 ): Server<undefined> {
   const logger = createDebugLogger("relay");
-  const runtime = ManagedRuntime.make(services);
+  const runtime = ManagedRuntime.make(Layer.merge(services, diagnostics));
   const server = Bun.serve({
     port: config.port,
     hostname: config.hostname,

@@ -1,5 +1,10 @@
 import { createDebugLogger, formatBodyForDebug } from "@shallot/observability";
-import { bindRuntimeLifecycle, recoverDefect } from "@shallot/server-runtime";
+import {
+  bindRuntimeLifecycle,
+  DefectReporter,
+  defectReporterLive,
+  recoverDefect,
+} from "@shallot/server-runtime";
 import type { Server } from "bun";
 import { Effect, Layer, ManagedRuntime, Redacted } from "effect";
 import type { MockProviderConfig } from "./config.ts";
@@ -21,9 +26,10 @@ export interface MockProviderHooks {
 export function createMockProviderServer(
   config: MockProviderConfig,
   hooks: MockProviderHooks = {},
+  diagnostics: Layer.Layer<DefectReporter> = defectReporterLive,
 ): Server<undefined> {
   const logger = createDebugLogger("provider");
-  const runtime = ManagedRuntime.make(Layer.empty);
+  const runtime = ManagedRuntime.make(diagnostics);
   const server = Bun.serve({
     port: config.port,
     hostname: config.hostname,

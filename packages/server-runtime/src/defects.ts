@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { Cause, Effect } from "effect";
+import { Cause, Context, Effect, Layer } from "effect";
 
 export interface DefectDiagnostic {
   readonly component: string;
@@ -7,19 +7,34 @@ export interface DefectDiagnostic {
   readonly incidentId: string;
 }
 
-export type DefectReporter = (diagnostic: DefectDiagnostic) => void;
+export class DefectReporter extends Context.Service<
+  DefectReporter,
+  {
+    report(diagnostic: DefectDiagnostic): Effect.Effect<void>;
+  }
+>()("@shallot/server-runtime/DefectReporter") {}
+
+export const defectReporterLive = Layer.succeed(
+  DefectReporter,
+  DefectReporter.of({
+    report: (diagnostic) =>
+      Effect.sync(() => console.error(JSON.stringify(diagnostic))).pipe(
+        Effect.catchCause(() => Effect.void),
+      ),
+  }),
+);
 
 export function recoverDefect(
   component: string,
   response: () => Response,
-  report: DefectReporter = reportToConsole,
-): (cause: Cause.Cause<never>) => Effect.Effect<Response> {
+): (cause: Cause.Cause<never>) => Effect.Effect<Response, never, DefectReporter> {
   return (cause) => {
     if (Cause.hasInterruptsOnly(cause)) return Effect.failCause(cause);
 
-    return Effect.sync(() => {
+    return Effect.gen(function* () {
+      const reporter = yield* DefectReporter;
       // The reporter never receives the cause because its message may contain secrets.
-      report({
+      yield* reporter.report({
         component,
         event: "request.defect",
         incidentId: randomUUID(),
@@ -28,7 +43,3 @@ export function recoverDefect(
     });
   };
 }
-
-const reportToConsole: DefectReporter = (diagnostic) => {
-  console.error(JSON.stringify(diagnostic));
-};

@@ -1,6 +1,11 @@
 import { createDebugLogger, formatCiphertextPreview } from "@shallot/observability";
 import { PATHS, sealRequest } from "@shallot/protocol";
-import { bindRuntimeLifecycle, recoverDefect } from "@shallot/server-runtime";
+import {
+  bindRuntimeLifecycle,
+  DefectReporter,
+  defectReporterLive,
+  recoverDefect,
+} from "@shallot/server-runtime";
 import type { Server } from "bun";
 import { Effect, Layer, ManagedRuntime } from "effect";
 import { readChatRequest } from "./chat-request.ts";
@@ -21,9 +26,10 @@ import { createBufferedResponse, createStreamingResponse } from "./response.ts";
 export function createSidecarServer(
   config: SidecarConfig,
   services: Layer.Layer<RelayClient> = sidecarLive(config),
+  diagnostics: Layer.Layer<DefectReporter> = defectReporterLive,
 ): Server<undefined> {
   const logger = createDebugLogger("sidecar");
-  const runtime = ManagedRuntime.make(services);
+  const runtime = ManagedRuntime.make(Layer.merge(services, diagnostics));
   const server = Bun.serve({
     port: config.port,
     hostname: config.hostname,

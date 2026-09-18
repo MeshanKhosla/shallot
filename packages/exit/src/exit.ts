@@ -8,7 +8,12 @@ import {
   readLimitedBody,
   type SealedRequest,
 } from "@shallot/protocol";
-import { bindRuntimeLifecycle, recoverDefect } from "@shallot/server-runtime";
+import {
+  bindRuntimeLifecycle,
+  DefectReporter,
+  defectReporterLive,
+  recoverDefect,
+} from "@shallot/server-runtime";
 import type { Server } from "bun";
 import { Effect, Layer, ManagedRuntime, Redacted } from "effect";
 import type { ExitConfig } from "./config.ts";
@@ -34,9 +39,10 @@ export type ExitServices = LlmProvider | ReplayProtection;
 export function createExitServer(
   config: ExitConfig,
   services: Layer.Layer<ExitServices>,
+  diagnostics: Layer.Layer<DefectReporter> = defectReporterLive,
 ): Server<undefined> {
   const logger = createDebugLogger("exit");
-  const runtime = ManagedRuntime.make(services);
+  const runtime = ManagedRuntime.make(Layer.merge(services, diagnostics));
   const server = Bun.serve({
     port: config.port,
     hostname: config.hostname,

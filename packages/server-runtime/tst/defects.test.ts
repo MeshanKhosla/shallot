@@ -1,6 +1,18 @@
 import { describe, expect, test } from "bun:test";
-import { Cause, Effect } from "effect";
-import { type DefectDiagnostic, recoverDefect } from "../src/defects.ts";
+import { Cause, Effect, Layer } from "effect";
+import { type DefectDiagnostic, DefectReporter, recoverDefect } from "../src/defects.ts";
+
+function captureDiagnostics(diagnostics: DefectDiagnostic[]) {
+  return Layer.succeed(
+    DefectReporter,
+    DefectReporter.of({
+      report: (diagnostic) =>
+        Effect.sync(() => {
+          diagnostics.push(diagnostic);
+        }),
+    }),
+  );
+}
 
 describe("defect diagnostics", () => {
   test("records an incident without passing defect content to the reporter", async () => {
@@ -9,8 +21,9 @@ describe("defect diagnostics", () => {
       recoverDefect(
         "relay",
         () => new Response("generic", { status: 500 }),
-        (diagnostic) => diagnostics.push(diagnostic),
-      )(Cause.die(new Error("credential-canary"))),
+      )(Cause.die(new Error("credential-canary"))).pipe(
+        Effect.provide(captureDiagnostics(diagnostics)),
+      ),
     );
 
     expect(response.status).toBe(500);
@@ -29,8 +42,7 @@ describe("defect diagnostics", () => {
       recoverDefect(
         "relay",
         () => new Response(null, { status: 500 }),
-        (diagnostic) => diagnostics.push(diagnostic),
-      )(Cause.interrupt()),
+      )(Cause.interrupt()).pipe(Effect.provide(captureDiagnostics(diagnostics))),
     );
 
     expect(exit._tag).toBe("Failure");
