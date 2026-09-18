@@ -18,6 +18,8 @@ interface LocalStackOptions {
   inspect?: boolean;
 }
 
+const DEBUG_TIMEOUT_MS = "600000";
+
 const INSPECTOR_ENDPOINTS: Record<LocalService["name"], string> = {
   provider: "127.0.0.1:6499/provider",
   exit: "127.0.0.1:6500/exit",
@@ -77,6 +79,7 @@ function readKeys(rootDirectory: string): LocalStackKeys {
 export function createLocalServices(
   keys: LocalStackKeys,
   environment: NodeJS.ProcessEnv = process.env,
+  options: LocalStackOptions = {},
 ): LocalService[] {
   const providerPort = environment.MOCK_PROVIDER_PORT ?? "8785";
   const exitPort = environment.EXIT_PORT ?? "8786";
@@ -109,6 +112,12 @@ export function createLocalServices(
       entrypoint: "packages/exit/src/main.ts",
       environment: {
         ...common,
+        ...(options.inspect
+          ? {
+              LLM_PROVIDER_TIMEOUT_MS:
+                environment.LLM_PROVIDER_TIMEOUT_MS ?? DEBUG_TIMEOUT_MS,
+            }
+          : {}),
         EXIT_PRIVATE_KEY: keys.privateKey,
         EXIT_RELAY_TOKEN: relayToken,
         LLM_PROVIDER_URL: llmProviderUrl,
@@ -120,6 +129,12 @@ export function createLocalServices(
       entrypoint: "packages/relay/src/main.ts",
       environment: {
         ...common,
+        ...(options.inspect
+          ? {
+              RELAY_EXIT_TIMEOUT_MS:
+                environment.RELAY_EXIT_TIMEOUT_MS ?? DEBUG_TIMEOUT_MS,
+            }
+          : {}),
         RELAY_TENANT_TOKENS: environment.RELAY_TENANT_TOKENS ?? "demo:tenant-local",
         RELAY_EXIT_TOKEN: relayToken,
         RELAY_EXIT_URL:
@@ -132,6 +147,12 @@ export function createLocalServices(
       entrypoint: "packages/client/src/main.ts",
       environment: {
         ...common,
+        ...(options.inspect
+          ? {
+              SIDECAR_RELAY_TIMEOUT_MS:
+                environment.SIDECAR_RELAY_TIMEOUT_MS ?? DEBUG_TIMEOUT_MS,
+            }
+          : {}),
         SIDECAR_EXIT_PUBLIC_KEY: keys.publicKey,
         SIDECAR_RELAY_URL:
           environment.SIDECAR_RELAY_URL ??
@@ -145,7 +166,7 @@ export async function runLocalStack(
   rootDirectory: string,
   options: LocalStackOptions = {},
 ): Promise<number> {
-  const services = createLocalServices(readKeys(rootDirectory));
+  const services = createLocalServices(readKeys(rootDirectory), process.env, options);
   const { result } = concurrently(createConcurrentCommands(services, options.inspect), {
     cwd: rootDirectory,
     prefix: "[{color}{name}{/color}]",

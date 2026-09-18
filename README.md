@@ -53,6 +53,10 @@ extension and start the inspector-enabled stack:
 bun run dev:debug
 ```
 
+This command raises the Sidecar, Relay, and provider deadlines to ten minutes so
+requests can remain paused at breakpoints. Explicit timeout environment values
+override the debug defaults.
+
 Open Run and Debug, select `Attach: Local Shallot stack`, and press F5. The
 compound configuration attaches to Provider, Exit, Relay, and Sidecar. Set
 breakpoints before sending a request to `http://127.0.0.1:8788/v1`.

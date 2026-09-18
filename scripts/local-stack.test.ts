@@ -81,6 +81,36 @@ describe("local stack", () => {
     ]);
   });
 
+  test("uses longer upstream timeouts while debugging", () => {
+    const services = createLocalServices(KEYS, {}, { inspect: true });
+    const byName = Object.fromEntries(
+      services.map((service) => [service.name, service.environment]),
+    );
+
+    expect(byName.sidecar?.SIDECAR_RELAY_TIMEOUT_MS).toBe("600000");
+    expect(byName.relay?.RELAY_EXIT_TIMEOUT_MS).toBe("600000");
+    expect(byName.exit?.LLM_PROVIDER_TIMEOUT_MS).toBe("600000");
+  });
+
+  test("preserves explicit timeout overrides while debugging", () => {
+    const services = createLocalServices(
+      KEYS,
+      {
+        SIDECAR_RELAY_TIMEOUT_MS: "700000",
+        RELAY_EXIT_TIMEOUT_MS: "800000",
+        LLM_PROVIDER_TIMEOUT_MS: "900000",
+      },
+      { inspect: true },
+    );
+    const byName = Object.fromEntries(
+      services.map((service) => [service.name, service.environment]),
+    );
+
+    expect(byName.sidecar?.SIDECAR_RELAY_TIMEOUT_MS).toBe("700000");
+    expect(byName.relay?.RELAY_EXIT_TIMEOUT_MS).toBe("800000");
+    expect(byName.exit?.LLM_PROVIDER_TIMEOUT_MS).toBe("900000");
+  });
+
   test("gives each process a named color prefix", () => {
     const services = createLocalServices(KEYS, {});
 
