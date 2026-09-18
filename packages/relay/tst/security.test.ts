@@ -1,7 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { Effect } from "effect";
+import { Effect, ManagedRuntime } from "effect";
 import { TestClock } from "effect/testing";
-import { MemoryRequestTracker } from "../src/request-tracker.ts";
+import {
+  MemoryRequestTracker,
+  RequestTracker,
+  requestTrackerLayer,
+} from "../src/request-tracker.ts";
 import { StaticTenantAuthenticator } from "../src/tenant-auth.ts";
 
 describe("Relay security controls", () => {
@@ -53,5 +57,27 @@ describe("Relay security controls", () => {
       "request tracker is full",
     );
     expect(Effect.runSync(tracker.claim("tenant-two", "request-one"))).toBeTrue();
+  });
+
+  test("allocates independent request state for each Layer build", async () => {
+    const layer = requestTrackerLayer({
+      ttlMs: 60_000,
+      maxEntries: 10,
+      maxEntriesPerTenant: 10,
+    });
+    const first = ManagedRuntime.make(layer);
+    const second = ManagedRuntime.make(layer);
+    const claim = Effect.gen(function* () {
+      const tracker = yield* RequestTracker;
+      return yield* tracker.claim("same-tenant", "same-request");
+    });
+
+    try {
+      expect(await first.runPromise(claim)).toBeTrue();
+      expect(await first.runPromise(claim)).toBeFalse();
+      expect(await second.runPromise(claim)).toBeTrue();
+    } finally {
+      await Promise.all([first.dispose(), second.dispose()]);
+    }
   });
 });

@@ -13,20 +13,22 @@ export function replayProtectionLayer(config: {
   readonly ttlMs: number;
   readonly maxEntries: number;
 }): Layer.Layer<ReplayProtection> {
-  const cache = new MemoryReplayCache(config.ttlMs, config.maxEntries);
-  return Layer.succeed(ReplayProtection, {
-    claim: (key) =>
-      Effect.gen(function* () {
-        const now = yield* Clock.currentTimeMillis;
-        return yield* Effect.try({
-          try: () => cache.claim(key, now),
-          catch: (cause) => {
-            if (cause instanceof ReplayCacheCapacityError) {
-              return new ExitReplayCapacityExhausted();
-            }
-            throw cause;
-          },
-        });
-      }),
+  return Layer.sync(ReplayProtection, () => {
+    const cache = new MemoryReplayCache(config.ttlMs, config.maxEntries);
+    return ReplayProtection.of({
+      claim: (key) =>
+        Effect.gen(function* () {
+          const now = yield* Clock.currentTimeMillis;
+          return yield* Effect.try({
+            try: () => cache.claim(key, now),
+            catch: (cause) => {
+              if (cause instanceof ReplayCacheCapacityError) {
+                return new ExitReplayCapacityExhausted();
+              }
+              throw cause;
+            },
+          });
+        }),
+    });
   });
 }

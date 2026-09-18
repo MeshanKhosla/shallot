@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { Effect } from "effect";
+import { Effect, ManagedRuntime } from "effect";
 import { TestClock } from "effect/testing";
 import { MemoryReplayCache } from "../src/replay-cache.ts";
 import { ReplayProtection, replayProtectionLayer } from "../src/replay-protection.ts";
@@ -104,5 +104,23 @@ describe("Exit security controls", () => {
         ]),
       ),
     );
+  });
+
+  test("allocates independent replay state for each Layer build", async () => {
+    const layer = replayProtectionLayer({ ttlMs: 60_000, maxEntries: 10 });
+    const first = ManagedRuntime.make(layer);
+    const second = ManagedRuntime.make(layer);
+    const claim = Effect.gen(function* () {
+      const protection = yield* ReplayProtection;
+      return yield* protection.claim("same-envelope");
+    });
+
+    try {
+      expect(await first.runPromise(claim)).toBeTrue();
+      expect(await first.runPromise(claim)).toBeFalse();
+      expect(await second.runPromise(claim)).toBeTrue();
+    } finally {
+      await Promise.all([first.dispose(), second.dispose()]);
+    }
   });
 });

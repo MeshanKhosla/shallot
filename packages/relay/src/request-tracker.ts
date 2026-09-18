@@ -66,8 +66,13 @@ export interface RequestTrackerConfig {
 export function requestTrackerLayer(
   config: RequestTrackerConfig,
 ): Layer.Layer<RequestTracker> {
-  return Layer.succeed(
+  return Layer.sync(
     RequestTracker,
-    new MemoryRequestTracker(config.ttlMs, config.maxEntries, config.maxEntriesPerTenant),
+    () =>
+      new MemoryRequestTracker(
+        config.ttlMs,
+        config.maxEntries,
+        config.maxEntriesPerTenant,
+      ),
   );
 }

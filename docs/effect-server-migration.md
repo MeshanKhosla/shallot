@@ -19,27 +19,37 @@ Relay runtime
 
 Exit runtime
   Exit request handler -> ReplayProtection -> Clock
-                       -> LlmProvider -> ProviderTransport
+                       -> LlmProvider
+
+Exit application composition
+  OpenAI-compatible LlmProvider -> ProviderTransport
 
 Mock provider runtime
   Mock provider request handler
 ```
 
-Server configuration contains data such as addresses, credentials, limits, and
-cache policy. It does not contain live service implementations. Each server has
-one production Layer constructor, and tests replace that Layer when they need a
-fake provider, transport, clock, authenticator, tracker, observer, or replay
-protection. Pure
-validation, sanitization, authentication comparisons, and response
-transformations remain plain functions unless they need injected state or
-cancellation. Mock provider response functions stay plain because they have no
-service dependencies.
+Server configuration contains data such as addresses, service credentials,
+limits, and cache policy. It does not contain live service implementations.
+Each server has one production Layer constructor, and tests replace that Layer
+when they need a fake provider, transport, clock, authenticator, tracker,
+observer, or replay protection. Pure validation, sanitization, authentication
+comparisons, and response transformations remain plain functions unless they
+need injected state or cancellation. Mock provider response functions stay
+plain because they have no service dependencies.
+
+The Exit server depends only on the abstract `LlmProvider` service. Provider
+connection settings and policy belong to that service. The application entry
+point is the only module that loads the default OpenAI-compatible provider and
+combines its Layer with the Exit replay Layer. A different provider can replace
+that Layer without changing `ExitConfig`, `exit.ts`, or the request handler.
 
 The three outbound HTTP adapters receive their fetch and timeout behavior from
 transport Layers. Relay test observations also come from a Layer, with a no-op
 implementation in production. This leaves one dependency-injection mechanism
 for request processing. Replay expiry reads Effect's `Clock`, so tests can move
-time without adding clock callbacks to production classes.
+time without adding clock callbacks to production classes. Stateful replay and
+request-tracking services allocate their caches when each Layer is built, so
+separate server runtimes never share replay state.
 
 ## Runtime boundary
 
