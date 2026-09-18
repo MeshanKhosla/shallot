@@ -4,7 +4,7 @@
 
 ## Goal
 
-Build a working proof of concept for an AI gateway with a split trust model:
+Build a working proof of concept for an oblivious AI gateway, modeled on the Oblivious HTTP design where no single service sees both who sent a prompt and what it says:
 
 - The Relay authenticates the tenant but cannot read the AI request or response.
 - The Exit reads the AI request and calls the provider but receives no tenant identity.

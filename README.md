@@ -4,7 +4,7 @@ _Onion routing for your AI gateway_
 
 ![Animated Shallot request flow showing tenant identity outside the encrypted prompt](docs/flow.gif)
 
-Shallot is a proof-of-concept AI gateway split in two so that no single service sees both who sent a prompt and what it says. It exposes an OpenAI Chat Completions endpoint that works with the Vercel AI SDK.
+Shallot is a proof-of-concept oblivious AI gateway: no single service ever sees both who sent a prompt and what it says. Oblivious, as in the IETF's [Oblivious HTTP](https://www.rfc-editor.org/rfc/rfc9458), means the Relay handles tenant identity and traffic metadata while the Exit alone sees the plaintext — only their collusion links the two. It exposes an OpenAI Chat Completions endpoint that works with the Vercel AI SDK.
 
 The client sidecar encrypts requests to the Exit. The Relay authenticates the tenant and forwards the opaque request. The Exit decrypts and sanitizes it, calls a configured AI provider, and encrypts padded response frames back to the sidecar.
 
@@ -163,7 +163,7 @@ read it. Do not enable them in production or send them to a shared log service.
 
 ## Security boundary
 
-The privacy property requires the Relay and Exit not to collude. The Relay learns tenant identity and traffic metadata. The Exit and upstream provider see the sanitized plaintext request, and the provider sees requests as coming from the Exit. If Relay and Exit records are combined, or timing is correlated, they can associate a tenant with a request.
+The privacy property requires the Relay and Exit not to collude. The Relay learns tenant identity and traffic metadata. The Exit and upstream provider see the sanitized plaintext request, and the provider sees requests as coming from the Exit. If Relay and Exit records are combined, or timing is correlated, they can associate a tenant with a request. This is what makes the gateway oblivious: each service only ever sees what it must.
 
 Shallot uses RFC 9180 HPKE with X25519/HKDF-SHA-256, HKDF-SHA-256, and AES-256-GCM. The static Exit recipient key does not provide forward secrecy if that private key is later compromised. This POC is not a substitute for an independent security review.
 
