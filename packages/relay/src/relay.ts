@@ -1,4 +1,8 @@
-import { createDebugLogger, formatCiphertextPreview } from "@shallot/observability";
+import {
+  createDebugLogger,
+  type DebugLogger,
+  formatCiphertextPreview,
+} from "@shallot/observability";
 import {
   BodyTooLargeError,
   PATHS,
@@ -7,168 +11,186 @@ import {
   SEALED_STREAM_CONTENT_TYPE,
   type SealedRequest,
 } from "@shallot/protocol";
-import type { Server } from "bun";
-import { loadConfig, type RelayConfig } from "./config.ts";
-import { RelayHttpError, relayErrorResponse } from "./errors.ts";
-import { forwardToExit } from "./exit-client.ts";
-import { RequestTrackerCapacityError } from "./request-tracker.ts";
+import {
+  type DefectReporter,
+  defectReporterLive,
+  recoverDefect,
+  serveWebHandler,
+} from "@shallot/server-runtime";
+import { Effect, Layer, Redacted } from "effect";
+import { ConcurrencyLimiter, concurrencyLimiterLayer } from "./concurrency-limiter.ts";
+import type { RelayConfig } from "./config.ts";
+import {
+  RelayInvalidRequest,
+  RelayReplayDetected,
+  type RelayRequestError,
+  RelayRequestTooLarge,
+  RelayRouteNotFound,
+  relayDefectResponse,
+  relayErrorResponse,
+} from "./errors.ts";
+import { ExitClient, exitClientLayer, exitTransportLive } from "./exit-client.ts";
+import { RelayObserver, relayObserverNoop } from "./relay-observer.ts";
+import { RequestTracker, requestTrackerLayer } from "./request-tracker.ts";
+import { proxyResponseBody } from "./response-proxy.ts";
+import { TenantAuthenticator, tenantAuthenticatorLayer } from "./tenant-auth.ts";
 
-export function createRelayServer(config: RelayConfig = loadConfig()): Server<undefined> {
-  let activeRequests = 0;
-  const logger = createDebugLogger("relay");
+export type RelayServices =
+  | ConcurrencyLimiter
+  | TenantAuthenticator
+  | RequestTracker
+  | ExitClient
+  | RelayObserver;
 
-  return Bun.serve({
-    port: config.port,
-    hostname: config.hostname,
-    idleTimeout: 60,
-    async fetch(req) {
-      const url = new URL(req.url);
-      if (req.method !== "POST" || url.pathname !== PATHS.chat) {
-        return Response.json(
-          { error: { message: `only POST ${PATHS.chat}`, type: "not_found_error" } },
-          { status: 404 },
-        );
-      }
-
-      if (activeRequests >= config.maxConcurrentRequests) {
-        return relayErrorResponse(
-          new RelayHttpError(429, "Relay concurrency limit reached", "rate_limit_error"),
-        );
-      }
-      activeRequests += 1;
-      let handedOff = false;
-      const release = () => {
-        activeRequests -= 1;
-      };
-
-      try {
-        const tenant = config.authenticator.authenticate(
-          req.headers.get("authorization"),
-        );
-        const { envelope, rawBody } = await readEnvelope(req, config.maxEnvelopeBytes);
-        logger.debug("request.received", {
-          tenantId: tenant.id,
-          requestId: envelope.requestId,
-          keyId: envelope.keyId,
-          prompt: formatCiphertextPreview(envelope.ciphertext),
-          ciphertextCharacters: envelope.ciphertext.length,
-        });
-        try {
-          if (!config.requestTracker.claim(tenant.id, envelope.requestId)) {
-            throw new RelayHttpError(409, "Request ID was replayed", "replay_error");
-          }
-        } catch (error) {
-          if (error instanceof RequestTrackerCapacityError) {
-            throw new RelayHttpError(
-              503,
-              "Relay request tracker is full",
-              "overloaded_error",
-            );
-          }
-          throw error;
-        }
-
-        const responseBody = await forwardToExit(rawBody, config, req.signal);
-        const forwardedHeaders = new Headers({
-          authorization: `Bearer ${config.exitToken}`,
-          "content-type": "application/json",
-        });
-        config.observe?.({
-          tenantId: tenant.id,
-          requestId: envelope.requestId,
-          body: rawBody,
-          forwardedHeaders,
-        });
-
-        // The request handler owns the permit until the response body takes over.
-        handedOff = true;
-        return new Response(
-          proxyBody(responseBody, release, (chunk) => {
-            logger.debug("response.chunk.received", {
-              tenantId: tenant.id,
-              requestId: envelope.requestId,
-              encryptedBytes: chunk.byteLength,
-            });
-            config.observeResponseChunk?.(chunk);
-          }),
-          {
-            status: 200,
-            headers: {
-              "cache-control": "no-store",
-              "content-type": SEALED_STREAM_CONTENT_TYPE,
-            },
-          },
-        );
-      } catch (error) {
-        return relayErrorResponse(error);
-      } finally {
-        if (!handedOff) release();
-      }
+export function createRelayServer(
+  config: RelayConfig,
+  services: Layer.Layer<RelayServices> = relayLive(config),
+  options: {
+    readonly diagnostics?: Layer.Layer<DefectReporter>;
+    readonly logger?: DebugLogger;
+  } = {},
+) {
+  const logger = options.logger ?? createDebugLogger("relay");
+  const dependencies = Layer.merge(services, options.diagnostics ?? defectReporterLive);
+  return serveWebHandler(
+    {
+      port: config.port,
+      hostname: config.hostname,
+      idleTimeout: 60,
     },
-  });
+    (req) =>
+      handleRelayRequest(req, config, logger).pipe(
+        Effect.catch((error) => Effect.succeed(relayErrorResponse(error))),
+        Effect.catchCause(recoverDefect("relay", relayDefectResponse)),
+      ),
+  ).pipe(Effect.provide(dependencies));
 }
 
-async function readEnvelope(
+export function relayLive(
+  config: RelayConfig,
+  observer: Layer.Layer<RelayObserver> = relayObserverNoop,
+): Layer.Layer<RelayServices> {
+  return Layer.mergeAll(
+    tenantAuthenticatorLayer(config.tenantTokens),
+    requestTrackerLayer({
+      ttlMs: config.requestTtlMs,
+      maxEntries: config.maxRequestEntries,
+      maxEntriesPerTenant: config.maxRequestEntriesPerTenant,
+    }),
+    concurrencyLimiterLayer(config.maxConcurrentRequests),
+    exitClientLayer({
+      url: config.exitUrl,
+      token: config.exitToken,
+      timeoutMs: config.exitTimeoutMs,
+    }).pipe(Layer.provide(exitTransportLive)),
+    observer,
+  );
+}
+
+export const handleRelayRequest = Effect.fn("relay.request")(function* (
+  req: Request,
+  config: RelayConfig,
+  logger = createDebugLogger("relay"),
+): Effect.fn.Return<
+  Response,
+  RelayRequestError,
+  ConcurrencyLimiter | TenantAuthenticator | RequestTracker | ExitClient | RelayObserver
+> {
+  const url = new URL(req.url);
+  if (req.method !== "POST" || url.pathname !== PATHS.chat) {
+    return yield* new RelayRouteNotFound();
+  }
+
+  const authenticator = yield* TenantAuthenticator;
+  const tenant = yield* authenticator.authenticate(req.headers.get("authorization"));
+
+  const limiter = yield* ConcurrencyLimiter;
+  const permit = yield* limiter.acquire;
+  let handedOff = false;
+  return yield* Effect.gen(function* () {
+    const { envelope, rawBody } = yield* readEnvelope(req, config.maxEnvelopeBytes);
+    yield* Effect.sync(() =>
+      logger.debug("request.received", {
+        tenantId: tenant.id,
+        requestId: envelope.requestId,
+        keyId: envelope.keyId,
+        prompt: formatCiphertextPreview(envelope.ciphertext),
+        ciphertextCharacters: envelope.ciphertext.length,
+      }),
+    );
+
+    const requestTracker = yield* RequestTracker;
+    if (!(yield* requestTracker.claim(tenant.id, envelope.requestId))) {
+      return yield* new RelayReplayDetected();
+    }
+
+    const exitClient = yield* ExitClient;
+    const responseBody = yield* exitClient.forward(rawBody);
+    const observer = yield* RelayObserver;
+    yield* Effect.sync(() => {
+      const forwardedHeaders = new Headers({
+        authorization: `Bearer ${Redacted.value(config.exitToken)}`,
+        "content-type": "application/json",
+      });
+      observer.observeRequest({
+        tenantId: tenant.id,
+        requestId: envelope.requestId,
+        body: rawBody,
+        forwardedHeaders,
+      });
+    });
+
+    const body = proxyResponseBody(responseBody, permit, (chunk) => {
+      logger.debug("response.chunk.received", {
+        tenantId: tenant.id,
+        requestId: envelope.requestId,
+        encryptedBytes: chunk.byteLength,
+      });
+      observer.observeResponseChunk(chunk);
+    });
+    const response = new Response(body, {
+      status: 200,
+      headers: {
+        "cache-control": "no-store",
+        "content-type": SEALED_STREAM_CONTENT_TYPE,
+      },
+    });
+    // The response body owns the permit only once construction succeeds.
+    handedOff = true;
+    return response;
+  }).pipe(
+    Effect.ensuring(
+      Effect.sync(() => {
+        if (!handedOff) permit.release();
+      }),
+    ),
+  );
+});
+
+function readEnvelope(
   req: Request,
   maxBytes: number,
-): Promise<{ envelope: SealedRequest; rawBody: string }> {
-  let body: Uint8Array;
-  try {
-    body = await readLimitedBody(req, maxBytes);
-  } catch (error) {
-    if (error instanceof BodyTooLargeError) {
-      throw new RelayHttpError(
-        413,
-        "Encrypted request is too large",
-        "request_too_large",
-      );
-    }
-    throw error;
-  }
-
-  const rawBody = new TextDecoder().decode(body);
-  try {
-    return {
-      envelope: parseSealedRequest(JSON.parse(rawBody)),
-      rawBody,
-    };
-  } catch {
-    throw new RelayHttpError(400, "Invalid encrypted request", "invalid_request_error");
-  }
-}
-
-function proxyBody(
-  body: ReadableStream<Uint8Array>,
-  release: () => void,
-  observe?: (chunk: Uint8Array) => void,
-): ReadableStream<Uint8Array> {
-  const reader = body.getReader();
-  let released = false;
-  const releaseOnce = () => {
-    if (released) return;
-    released = true;
-    release();
-  };
-
-  return new ReadableStream({
-    async pull(controller) {
-      try {
-        const result = await reader.read();
-        if (result.done) {
-          releaseOnce();
-          controller.close();
-        } else {
-          observe?.(result.value);
-          controller.enqueue(result.value);
-        }
-      } catch (error) {
-        releaseOnce();
-        controller.error(error);
-      }
+): Effect.Effect<
+  { envelope: SealedRequest; rawBody: string },
+  RelayRequestTooLarge | RelayInvalidRequest
+> {
+  const readBody = Effect.tryPromise({
+    try: () => readLimitedBody(req, maxBytes),
+    catch: (cause) => {
+      if (cause instanceof BodyTooLargeError) return new RelayRequestTooLarge();
+      throw cause;
     },
-    async cancel(reason) {
-      releaseOnce();
-      await reader.cancel(reason);
-    },
+  });
+
+  return Effect.gen(function* () {
+    const body = yield* readBody;
+    const rawBody = new TextDecoder().decode(body);
+    return yield* Effect.try({
+      try: () => ({
+        envelope: parseSealedRequest(JSON.parse(rawBody)),
+        rawBody,
+      }),
+      catch: () => new RelayInvalidRequest(),
+    });
   });
 }

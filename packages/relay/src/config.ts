@@ -1,75 +1,63 @@
-import { MemoryRequestTracker, type RequestTracker } from "./request-tracker.ts";
-import { StaticTenantAuthenticator, type TenantAuthenticator } from "./tenant-auth.ts";
-
-export interface RelayObservation {
-  tenantId: string;
-  requestId: string;
-  body: string;
-  forwardedHeaders: Headers;
-}
+import { positiveInteger } from "@shallot/server-runtime";
+import { Config, Data, Effect, Redacted } from "effect";
 
 export interface RelayConfig {
   hostname: string;
   port: number;
   exitUrl: URL;
-  exitToken: string;
-  authenticator: TenantAuthenticator;
-  requestTracker: RequestTracker;
+  exitToken: Redacted.Redacted<string>;
+  tenantTokens: ReadonlyMap<string, Redacted.Redacted<string>>;
+  requestTtlMs: number;
+  maxRequestEntries: number;
+  maxRequestEntriesPerTenant: number;
   maxEnvelopeBytes: number;
   maxConcurrentRequests: number;
   exitTimeoutMs: number;
-  fetch: typeof fetch;
-  observe?: (observation: RelayObservation) => void;
-  observeResponseChunk?: (chunk: Uint8Array) => void;
 }
 
-export function loadConfig(): RelayConfig {
-  const exitToken = process.env.RELAY_EXIT_TOKEN;
-  if (!exitToken) throw new Error("RELAY_EXIT_TOKEN is required");
+export class RelayConfigError extends Data.TaggedError("RelayConfigError")<{
+  readonly message: string;
+}> {}
 
+export const loadConfig = Effect.gen(function* () {
+  const configuredTokens = yield* Config.Redacted("RELAY_TENANT_TOKENS");
   return {
-    hostname: process.env.RELAY_HOSTNAME ?? "127.0.0.1",
-    port: positiveInteger("RELAY_PORT", 8787),
-    exitUrl: new URL(
-      process.env.RELAY_EXIT_URL ?? "http://127.0.0.1:8786/v1/chat/completions",
+    hostname: yield* Config.String("RELAY_HOSTNAME").pipe(
+      Config.withDefault("127.0.0.1"),
     ),
-    exitToken,
-    authenticator: new StaticTenantAuthenticator(tenantTokensFromEnvironment()),
-    requestTracker: new MemoryRequestTracker(
-      positiveInteger("RELAY_REQUEST_TTL_MS", 5 * 60_000),
-      Date.now,
-      positiveInteger("RELAY_REQUEST_MAX_ENTRIES", 100_000),
-      positiveInteger("RELAY_REQUEST_MAX_ENTRIES_PER_TENANT", 10_000),
+    port: yield* Config.Port("RELAY_PORT").pipe(Config.withDefault(8787)),
+    exitUrl: yield* Config.URL("RELAY_EXIT_URL").pipe(
+      Config.withDefault(new URL("http://127.0.0.1:8786/v1/chat/completions")),
     ),
-    maxEnvelopeBytes: positiveInteger("RELAY_MAX_ENVELOPE_BYTES", 3 * 1024 * 1024),
-    maxConcurrentRequests: positiveInteger("RELAY_MAX_CONCURRENT_REQUESTS", 100),
-    exitTimeoutMs: positiveInteger("RELAY_EXIT_TIMEOUT_MS", 65_000),
-    fetch,
-  };
-}
+    exitToken: yield* Config.Redacted("RELAY_EXIT_TOKEN"),
+    tenantTokens: yield* parseTenantTokens(configuredTokens),
+    requestTtlMs: yield* positiveInteger("RELAY_REQUEST_TTL_MS", 5 * 60_000),
+    maxRequestEntries: yield* positiveInteger("RELAY_REQUEST_MAX_ENTRIES", 100_000),
+    maxRequestEntriesPerTenant: yield* positiveInteger(
+      "RELAY_REQUEST_MAX_ENTRIES_PER_TENANT",
+      10_000,
+    ),
+    maxEnvelopeBytes: yield* positiveInteger("RELAY_MAX_ENVELOPE_BYTES", 3 * 1024 * 1024),
+    maxConcurrentRequests: yield* positiveInteger("RELAY_MAX_CONCURRENT_REQUESTS", 100),
+    exitTimeoutMs: yield* positiveInteger("RELAY_EXIT_TIMEOUT_MS", 65_000),
+  } satisfies RelayConfig;
+});
 
-function positiveInteger(name: string, fallback: number): number {
-  const raw = process.env[name];
-  const value = raw === undefined ? fallback : Number(raw);
-  if (!Number.isSafeInteger(value) || value <= 0) {
-    throw new Error(`${name} must be a positive integer`);
-  }
-  return value;
-}
-
-function tenantTokensFromEnvironment(): Map<string, string> {
-  const configured = process.env.RELAY_TENANT_TOKENS;
-  if (!configured) {
-    throw new Error("RELAY_TENANT_TOKENS is required");
-  }
-
-  const tokens = new Map<string, string>();
-  for (const entry of configured.split(",")) {
+function parseTenantTokens(
+  configured: Redacted.Redacted<string>,
+): Effect.Effect<Map<string, Redacted.Redacted<string>>, RelayConfigError> {
+  const tokens = new Map<string, Redacted.Redacted<string>>();
+  const entries = Redacted.value(configured).split(",");
+  for (const entry of entries) {
     const separator = entry.indexOf(":");
     if (separator <= 0 || separator === entry.length - 1) {
-      throw new Error("RELAY_TENANT_TOKENS must use tenant:token entries");
+      return Effect.fail(
+        new RelayConfigError({
+          message: "RELAY_TENANT_TOKENS must use tenant:token entries",
+        }),
+      );
     }
-    tokens.set(entry.slice(0, separator), entry.slice(separator + 1));
+    tokens.set(entry.slice(0, separator), Redacted.make(entry.slice(separator + 1)));
   }
-  return tokens;
+  return Effect.succeed(tokens);
 }

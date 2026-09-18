@@ -1,14 +1,17 @@
-export { type ExitConfig, loadConfig } from "./config.ts";
-export { createExitServer } from "./exit.ts";
-export { loadLlmConfig } from "./llm-config.ts";
-export type { LlmConfig, LlmProvider } from "./llm-provider.ts";
+export { createExitApplication } from "./application.ts";
+export { type ExitConfig, ExitConfigError, loadConfig } from "./config.ts";
+export { createExitServer, type ExitServices, exitLive } from "./exit.ts";
+export { loadLlmProviderConfig } from "./llm-config.ts";
 export {
-  OpenAICompatibleProvider,
+  LlmProvider,
+  type LlmProviderPolicy,
+  type LlmProviderService,
+} from "./llm-provider.ts";
+export {
   type OpenAICompatibleProviderConfig,
+  openAICompatibleProviderLayer,
+  openAICompatibleProviderLive,
+  ProviderTransport,
+  providerTransportLive,
 } from "./openai-compatible-provider.ts";
-export {
-  MemoryReplayCache,
-  type ReplayCache,
-  ReplayCacheCapacityError,
-} from "./replay-cache.ts";
 export { type SanitizedChatRequest, sanitizeChatRequest } from "./sanitize-request.ts";

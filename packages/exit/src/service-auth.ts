@@ -1,17 +1,21 @@
 import { createHash, timingSafeEqual } from "node:crypto";
-import { ExitHttpError } from "./errors.ts";
+import { Redacted } from "effect";
+import { ExitAuthenticationError } from "./errors.ts";
 
 export function requireRelayAuthorization(
   authorization: string | null,
-  expectedToken: string,
+  expectedToken: Redacted.Redacted<string>,
 ): void {
   const prefix = "Bearer ";
   const supplied = authorization?.startsWith(prefix)
     ? authorization.slice(prefix.length)
     : "";
-  const matches = timingSafeEqual(digest(supplied), digest(expectedToken));
+  const matches = timingSafeEqual(
+    digest(supplied),
+    digest(Redacted.value(expectedToken)),
+  );
   if (!matches) {
-    throw new ExitHttpError(401, "Relay authentication failed", "authentication_error");
+    throw new ExitAuthenticationError();
   }
 }
 

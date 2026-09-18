@@ -7,6 +7,7 @@ interface ChatRequest extends Record<string, unknown> {
 export function createOpenAIResponse(
   request: ChatRequest,
   chunkDelayMs: number,
+  observeCancellation?: () => void,
 ): Response {
   if (request.model === "mock-error") {
     return Response.json(
@@ -39,7 +40,9 @@ export function createOpenAIResponse(
     );
   }
 
-  if (request.stream === true) return streamingCompletion(request, chunkDelayMs);
+  if (request.stream === true) {
+    return streamingCompletion(request, chunkDelayMs, observeCancellation);
+  }
   return completion(request, {
     role: "assistant",
     content: finalTextFor(request),
@@ -106,7 +109,11 @@ function sseChunk(request: ChatRequest, content: string, finishReason: string | 
   })}\n\n`;
 }
 
-function streamingCompletion(request: ChatRequest, delayMs: number): Response {
+function streamingCompletion(
+  request: ChatRequest,
+  delayMs: number,
+  observeCancellation?: () => void,
+): Response {
   const text = finalTextFor(request);
   const midpoint = Math.ceil(text.length / 2);
   const encoded = new TextEncoder().encode(
@@ -116,19 +123,31 @@ function streamingCompletion(request: ChatRequest, delayMs: number): Response {
       "data: [DONE]\n\n",
   );
   const splitPoints = [1, 7, 19, 43, encoded.byteLength];
+  const chunks: Uint8Array[] = [];
+  let offset = 0;
+  for (const point of splitPoints) {
+    const end = Math.min(point, encoded.byteLength);
+    if (end > offset) chunks.push(encoded.subarray(offset, end));
+    offset = end;
+  }
+  let index = 0;
+  let cancelled = false;
 
   const stream = new ReadableStream<Uint8Array>({
-    async start(controller) {
-      let offset = 0;
-      for (const point of splitPoints) {
-        const end = Math.min(point, encoded.byteLength);
-        if (end > offset) {
-          controller.enqueue(encoded.subarray(offset, end));
-          offset = end;
-          if (delayMs > 0) await Bun.sleep(delayMs);
-        }
+    async pull(controller) {
+      if (index > 0 && delayMs > 0) await Bun.sleep(delayMs);
+      if (cancelled) return;
+      const chunk = chunks[index];
+      if (!chunk) {
+        controller.close();
+        return;
       }
-      controller.close();
+      index += 1;
+      controller.enqueue(chunk);
+    },
+    cancel() {
+      cancelled = true;
+      observeCancellation?.();
     },
   });
 

@@ -2,28 +2,28 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { generateKeyPairSync } from "node:crypto";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { createSidecarServer } from "@shallot/client";
-import {
-  createExitServer,
-  MemoryReplayCache,
-  OpenAICompatibleProvider,
-} from "@shallot/exit";
+import { createExitServer, exitLive, openAICompatibleProviderLive } from "@shallot/exit";
 import {
   createMockProviderServer,
   type ProviderObservation,
 } from "@shallot/mock-provider";
 import {
   createRelayServer,
-  MemoryRequestTracker,
   type RelayObservation,
-  StaticTenantAuthenticator,
+  relayLive,
+  relayObserverLayer,
 } from "@shallot/relay";
+import { launchHttpServer } from "@shallot/server-runtime";
 import { generateText, Output, stepCountIs, streamText, tool } from "ai";
+import { Redacted } from "effect";
 import { z } from "zod";
 
 const TENANT_TOKEN = "tenant-canary-secret";
 const EXIT_TOKEN = "relay-to-exit-secret";
 const PROVIDER_TOKEN = "exit-to-provider-secret";
-const servers: Array<{ stop(closeActiveConnections?: boolean): void }> = [];
+const servers: Array<{
+  stop(closeActiveConnections?: boolean): void | Promise<void>;
+}> = [];
 
 function itemAt<T>(items: readonly T[], index: number): T {
   const item = items[index];
@@ -31,37 +31,64 @@ function itemAt<T>(items: readonly T[], index: number): T {
   return item;
 }
 
-afterEach(() => {
-  for (const server of servers.splice(0).reverse()) server.stop(true);
+afterEach(async () => {
+  await Promise.all(
+    servers
+      .splice(0)
+      .reverse()
+      .map((server) => server.stop(true)),
+  );
 });
 
-function setupGateway() {
+async function setupGateway(options: { providerChunkDelayMs?: number } = {}) {
   const relayObservations: RelayObservation[] = [];
   const relayResponseChunks: Uint8Array[] = [];
   const providerObservations: ProviderObservation[] = [];
+  let resolveProviderRequest: (() => void) | undefined;
+  const providerRequest = new Promise<void>((resolve) => {
+    resolveProviderRequest = resolve;
+  });
+  let resolveProviderCancellation: (() => void) | undefined;
+  const providerCancellation = new Promise<void>((resolve) => {
+    resolveProviderCancellation = resolve;
+  });
   const exitKeys = generateKeyPairSync("x25519");
 
-  const provider = createMockProviderServer({
-    hostname: "127.0.0.1",
-    port: 0,
-    expectedApiKey: PROVIDER_TOKEN,
-    chunkDelayMs: 1,
-    observe: (observation) => providerObservations.push(observation),
-  });
+  const provider = await launchHttpServer(
+    createMockProviderServer(
+      {
+        hostname: "127.0.0.1",
+        port: 0,
+        expectedApiKey: Redacted.make(PROVIDER_TOKEN),
+        chunkDelayMs: options.providerChunkDelayMs ?? 1,
+      },
+      {
+        observe: (observation) => {
+          providerObservations.push(observation);
+          resolveProviderRequest?.();
+        },
+        observeCancellation: () => resolveProviderCancellation?.(),
+      },
+    ),
+  );
   servers.push(provider);
 
-  const exit = createExitServer({
+  const exitConfig = {
     hostname: "127.0.0.1",
     port: 0,
-    relayToken: EXIT_TOKEN,
+    relayToken: Redacted.make(EXIT_TOKEN),
     privateKeys: new Map([["test-key", exitKeys.privateKey]]),
-    llm: {
-      provider: new OpenAICompatibleProvider({
-        url: new URL(`http://127.0.0.1:${provider.port}/v1/chat/completions`),
-        apiKey: PROVIDER_TOKEN,
-        timeoutMs: 5_000,
-        fetch,
-      }),
+    maxEnvelopeBytes: 256 * 1024,
+    responsePaddingBytes: 512,
+    responseFlushMs: 1,
+    replayTtlMs: 60_000,
+    replayMaxEntries: 10_000,
+  };
+  const providerLayer = openAICompatibleProviderLive({
+    url: new URL(`http://127.0.0.1:${provider.port}/v1/chat/completions`),
+    apiKey: Redacted.make(PROVIDER_TOKEN),
+    timeoutMs: 5_000,
+    policy: {
       allowedModels: new Set([
         "mock-text",
         "mock-stream",
@@ -71,42 +98,54 @@ function setupGateway() {
       ]),
       maxResponseBytes: 256 * 1024,
     },
-    maxEnvelopeBytes: 256 * 1024,
-    responsePaddingBytes: 512,
-    responseFlushMs: 1,
-    replayCache: new MemoryReplayCache(60_000),
   });
+  const exit = await launchHttpServer(
+    createExitServer(exitConfig, exitLive(exitConfig, providerLayer)),
+  );
   servers.push(exit);
 
-  const relay = createRelayServer({
+  const relayConfig = {
     hostname: "127.0.0.1",
     port: 0,
     exitUrl: new URL(`http://127.0.0.1:${exit.port}/v1/chat/completions`),
-    exitToken: EXIT_TOKEN,
-    authenticator: new StaticTenantAuthenticator(new Map([["tenant-one", TENANT_TOKEN]])),
-    requestTracker: new MemoryRequestTracker(60_000),
+    exitToken: Redacted.make(EXIT_TOKEN),
+    tenantTokens: new Map([["tenant-one", Redacted.make(TENANT_TOKEN)]]),
+    requestTtlMs: 60_000,
+    maxRequestEntries: 10_000,
+    maxRequestEntriesPerTenant: 1_000,
     maxEnvelopeBytes: 256 * 1024,
     maxConcurrentRequests: 10,
     exitTimeoutMs: 1_000,
-    fetch,
-    observe: (observation) => relayObservations.push(observation),
-    observeResponseChunk: (chunk) => relayResponseChunks.push(chunk.slice()),
-  });
+  };
+  const relay = await launchHttpServer(
+    createRelayServer(
+      relayConfig,
+      relayLive(
+        relayConfig,
+        relayObserverLayer({
+          observeRequest: (observation) => relayObservations.push(observation),
+          observeResponseChunk: (chunk) => relayResponseChunks.push(chunk.slice()),
+        }),
+      ),
+    ),
+  );
   servers.push(relay);
 
-  const sidecar = createSidecarServer({
-    hostname: "127.0.0.1",
-    port: 0,
-    relayUrl: new URL(`http://127.0.0.1:${relay.port}/v1/chat/completions`),
-    exitPublicKey: exitKeys.publicKey,
-    exitKeyId: "test-key",
-    requestPaddingBytes: 1024,
-    maxRequestBytes: 64 * 1024,
-    relayTimeoutMs: 1_000,
-    maxResponseLineBytes: 64 * 1024,
-    maxResponseFrames: 100,
-    maxResponseBytes: 256 * 1024,
-  });
+  const sidecar = await launchHttpServer(
+    createSidecarServer({
+      hostname: "127.0.0.1",
+      port: 0,
+      relayUrl: new URL(`http://127.0.0.1:${relay.port}/v1/chat/completions`),
+      exitPublicKey: exitKeys.publicKey,
+      exitKeyId: "test-key",
+      requestPaddingBytes: 1024,
+      maxRequestBytes: 64 * 1024,
+      relayTimeoutMs: 1_000,
+      maxResponseLineBytes: 64 * 1024,
+      maxResponseFrames: 100,
+      maxResponseBytes: 256 * 1024,
+    }),
+  );
   servers.push(sidecar);
 
   const shallot = createOpenAICompatible({
@@ -125,12 +164,14 @@ function setupGateway() {
     relayObservations,
     relayResponseText: () => Buffer.concat(relayResponseChunks).toString("utf8"),
     providerObservations,
+    providerRequest,
+    providerCancellation,
   };
 }
 
 describe("AI SDK through Shallot", () => {
   test("generates text without exposing identity and content together", async () => {
-    const gateway = setupGateway();
+    const gateway = await setupGateway();
     const prompt = "prompt-canary: return the configured response";
 
     const result = await generateText({
@@ -161,7 +202,7 @@ describe("AI SDK through Shallot", () => {
   });
 
   test("streams text through encrypted padded frames", async () => {
-    const gateway = setupGateway();
+    const gateway = await setupGateway();
     const result = streamText({
       model: gateway.shallot.chatModel("mock-stream"),
       prompt: "stream the deterministic response",
@@ -175,8 +216,34 @@ describe("AI SDK through Shallot", () => {
     expect(gateway.relayResponseText()).not.toContain(text);
   });
 
+  test("cancels the provider when the AI SDK client disconnects", async () => {
+    const gateway = await setupGateway({ providerChunkDelayMs: 1_000 });
+    const cancellation = new AbortController();
+    const result = streamText({
+      model: gateway.shallot.chatModel("mock-stream"),
+      prompt: "cancel this generation",
+      abortSignal: cancellation.signal,
+    });
+    const consume = (async () => {
+      for await (const _part of result.textStream) {
+        // Consumption keeps the HTTP body active until the abort below.
+      }
+    })();
+
+    await gateway.providerRequest;
+    cancellation.abort("AI SDK client stopped");
+    await consume.catch(() => undefined);
+
+    expect(
+      await Promise.race([
+        gateway.providerCancellation.then(() => "cancelled" as const),
+        Bun.sleep(500).then(() => "timed out" as const),
+      ]),
+    ).toBe("cancelled");
+  });
+
   test("supports an AI SDK tool round trip", async () => {
-    const gateway = setupGateway();
+    const gateway = await setupGateway();
     const result = await generateText({
       model: gateway.shallot.chatModel("mock-tool"),
       prompt: "What is the weather in Paris?",
@@ -198,7 +265,7 @@ describe("AI SDK through Shallot", () => {
   });
 
   test("supports structured output", async () => {
-    const gateway = setupGateway();
+    const gateway = await setupGateway();
     const result = await generateText({
       model: gateway.shallot.chatModel("mock-json"),
       prompt: "Return structured output",
@@ -211,7 +278,7 @@ describe("AI SDK through Shallot", () => {
   });
 
   test("returns encrypted provider errors to the AI SDK", async () => {
-    const gateway = setupGateway();
+    const gateway = await setupGateway();
     const operation = generateText({
       model: gateway.shallot.chatModel("mock-error"),
       prompt: "trigger the configured provider error",
@@ -227,7 +294,7 @@ describe("AI SDK through Shallot", () => {
   });
 
   test("rejects an invalid tenant token before the Exit", async () => {
-    const gateway = setupGateway();
+    const gateway = await setupGateway();
     const response = await fetch(gateway.sidecarUrl, {
       method: "POST",
       headers: {
@@ -246,7 +313,7 @@ describe("AI SDK through Shallot", () => {
   });
 
   test("rejects replayed envelopes at the Relay and Exit", async () => {
-    const gateway = setupGateway();
+    const gateway = await setupGateway();
     await generateText({
       model: gateway.shallot.chatModel("mock-text"),
       prompt: "create one envelope",
@@ -271,7 +338,8 @@ describe("AI SDK through Shallot", () => {
       },
       body: envelope,
     });
-    expect(exitReplay.status).toBe(409);
+    expect(exitReplay.status).toBe(200);
+    expect(exitReplay.headers.get("content-type")).toBe("application/x-ndjson");
     expect(gateway.providerObservations).toHaveLength(1);
   });
 });

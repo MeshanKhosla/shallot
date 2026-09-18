@@ -1,4 +1,4 @@
-import { createSidecarServer } from "./sidecar.ts";
+import { runServer } from "@shallot/server-runtime";
+import { createSidecarApplication } from "./application.ts";
 
-const server = createSidecarServer();
-console.log(`shallot sidecar listening on http://${server.hostname}:${server.port}`);
+runServer("sidecar", createSidecarApplication);

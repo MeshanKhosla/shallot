@@ -1,0 +1,72 @@
+import { Effect, Fiber } from "effect";
+
+export interface Deadline {
+  readonly signal: AbortSignal;
+  readonly expired: boolean;
+  readonly cancel: Effect.Effect<void>;
+}
+
+export function makeDeadline(timeoutMs: number): Effect.Effect<Deadline> {
+  return Effect.gen(function* () {
+    // This signal follows the returned Web Stream, which can outlive this Effect.
+    // Effect.abortSignal only represents the current fiber's interruption.
+    const controller = new AbortController();
+    const fiber = yield* Effect.sleep(timeoutMs).pipe(
+      Effect.tap(() => Effect.sync(() => controller.abort("upstream request timed out"))),
+      Effect.forkDetach,
+    );
+
+    return {
+      signal: controller.signal,
+      get expired() {
+        return controller.signal.aborted;
+      },
+      cancel: Fiber.interrupt(fiber).pipe(Effect.asVoid),
+    };
+  });
+}
+
+/**
+ * Keeps an upstream deadline active for the lifetime of a returned Web Stream.
+ * The deadline cannot end with the request Effect because the HTTP body may be
+ * consumed after the server has sent its headers.
+ */
+export function keepDeadlineUntilStreamEnds(
+  body: ReadableStream<Uint8Array>,
+  deadline: Deadline,
+): ReadableStream<Uint8Array> {
+  const reader = body.getReader();
+  let finished = false;
+
+  async function finish(reason?: unknown, cancelReader = false): Promise<void> {
+    if (finished) return;
+    finished = true;
+    await Effect.runPromise(deadline.cancel);
+    try {
+      if (cancelReader) await reader.cancel(reason);
+    } finally {
+      reader.releaseLock();
+    }
+  }
+
+  return new ReadableStream({
+    async pull(controller) {
+      try {
+        const result = await reader.read();
+        if (finished) return;
+        if (result.done) {
+          await finish();
+          controller.close();
+          return;
+        }
+        controller.enqueue(result.value);
+      } catch (error) {
+        await finish(error, true).catch(() => undefined);
+        controller.error(error);
+      }
+    },
+    async cancel(reason) {
+      await finish(reason, true);
+    },
+  });
+}

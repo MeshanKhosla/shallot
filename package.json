@@ -10,6 +10,7 @@
   },
   "packageManager": "bun@1.4.2",
   "scripts": {
+    "prepare": "effect-tsgo patch --typescript --no-oxlint",
     "keygen": "bun scripts/generate-exit-key.ts",
     "dev:local": "bun scripts/local-stack.ts",
     "dev:debug": "bun scripts/local-stack.ts --inspect",
@@ -23,8 +24,9 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.13",
+    "@effect/tsgo": "0.45.0",
     "@types/bun": "latest",
     "concurrently": "^10.0.5",
-    "typescript": "latest"
+    "typescript": "7.0.2"
   }
 }

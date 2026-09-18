@@ -1,0 +1,179 @@
+# Effect server migration
+
+Shallot uses Effect 4 throughout the four server applications while keeping the
+protocol and cryptographic code independent. `BunHttpServer` owns the HTTP
+listeners. Fetch `Request` and `Response` values and Web Streams remain the
+adapters at the protocol and AI SDK boundaries.
+
+## Dependency graph
+
+```text
+Sidecar runtime
+  Sidecar request handler -> RelayClient -> RelayTransport
+  DefectReporter
+
+Relay runtime
+  Relay request handler -> TenantAuthenticator
+                        -> RequestTracker -> Clock
+                        -> ConcurrencyLimiter
+                        -> ExitClient -> ExitTransport
+                        -> RelayObserver
+  DefectReporter
+
+Exit runtime
+  Exit request handler -> ReplayProtection -> Clock
+                       -> LlmProvider
+  DefectReporter
+
+Exit application composition
+  OpenAI-compatible LlmProvider -> ProviderTransport
+
+Mock provider runtime
+  Mock provider request handler
+  DefectReporter
+```
+
+Effect `Config` loads addresses, service credentials, limits, cache policy, and
+debug logging. Credentials stay in `Redacted` values until an HTTP or crypto
+boundary needs plaintext. Key parsing failures use typed configuration errors.
+Server configuration does not contain live service implementations.
+Each server has one production Layer constructor, and tests replace that Layer
+when they need a fake provider, transport, clock, authenticator, tracker,
+observer, or replay protection. Pure validation, sanitization, authentication
+comparisons, and response transformations remain plain functions unless they
+need injected state or cancellation. Mock provider response functions stay
+plain because they have no service dependencies.
+
+The Exit server depends only on the abstract `LlmProvider` service. Provider
+connection settings and policy belong to that service. The application entry
+point is the only module that loads the default OpenAI-compatible provider and
+combines its Layer with the Exit replay Layer. A different provider can replace
+that Layer without changing `ExitConfig`, `exit.ts`, or the request handler.
+
+The three outbound HTTP adapters receive `fetch` from transport Layers. Effect
+fibers own their deadlines and cancellation. Relay test observations also come
+from a Layer, with a no-op implementation in production. This leaves one
+dependency-injection mechanism for request processing. Replay expiry reads
+Effect's `Clock`, so tests can move time without adding clock callbacks to
+production classes. Stateful replay and request-tracking services allocate
+their caches when each Layer is built, so separate server runtimes never share
+replay state.
+
+## Runtime boundary
+
+Each `create*Server` function constructs an Effect Platform `BunHttpServer` in
+the current Scope and serves one Effect request program. The Bun adapter
+interrupts that request fiber when the client disconnects. Each application
+loads configuration and builds its Layers as an Effect. `BunRuntime.runMain`
+handles `SIGINT` and `SIGTERM`; interruption closes the Scope and stops the HTTP
+server.
+
+```text
+Effect Platform Bun HTTP server
+  -> Effect request program
+       -> services supplied by Layers
+       -> typed failures before HTTP headers
+  -> Web Stream response
+       -> explicit cancellation, backpressure, and cleanup
+```
+
+Effect owns request processing until the handler produces a `Response`. Web
+Streams own the response body after that point. Once Bun sends the response
+headers, a stream failure cannot return through the request Effect's typed error
+channel or replace the HTTP status. The stream instead errors its reader and
+runs its explicit cancellation and cleanup paths. This is normal HTTP streaming
+behavior, and keeping that boundary visible makes resource ownership easier to
+audit.
+
+Request programs return Fetch `Response` values. Expected failures stay in the
+typed error channel until one HTTP translation function converts them to the
+existing status, public message, and OpenAI-compatible error type. A defect is
+converted only at that outer boundary and always uses the component's generic
+500 response. The injected `DefectReporter` records a random incident ID,
+component name, and `request.defect` event before the server returns that
+response. The reporter never receives the cause object, so exception messages,
+ciphertext validation details, plaintext, credentials, and keys cannot enter
+the default defect log. Request interruption is not reported as a defect.
+
+## Error taxonomy
+
+The Sidecar models invalid routes or bodies, oversized bodies, Relay transport
+failure, Relay rejection, empty Relay responses, and malformed encrypted
+responses. The Relay models invalid routes or envelopes, tenant authentication,
+replay, exhausted replay or concurrency capacity, Exit timeout or transport
+failure, Exit rejection, and empty Exit responses. The Exit models invalid
+routes or envelopes, Relay authentication, unknown keys, decryption or
+sanitization failure, replay, exhausted replay capacity, provider timeout or
+transport failure, and provider response limits. The mock provider models route,
+authentication, and request-validation failures.
+
+Provider HTTP error responses are successful transport results. The Exit seals
+their status and body exactly as it does now. It does not retry provider calls.
+Once the Exit opens an HPKE envelope, it also seals request validation, replay,
+and replay-capacity errors. Errors that occur before decryption remain plaintext
+HTTP responses because the Exit does not yet have an authenticated response key.
+
+Provider timeouts are a distinct, tagged error: the Exit seals a `504` with
+`AI provider timed out` and the OpenAI-compatible `provider_error` type instead
+of folding it into the old generic `502` umbrella. A provider response that
+exceeds `maxResponseBytes` does not produce an HTTP error. The sealed
+stream simply errors its reader partway, so the client sees an aborted encrypted
+response rather than a successful one. The Relay and Sidecar map their own
+upstream timeouts and transport failures to `502` independently; those statuses
+describe Relay-or-Sidecar-to-upstream errors, not Exit-to-provider errors.
+
+## Cancellation and resources
+
+```text
+AI SDK disconnect
+  -> Sidecar request fiber interrupted
+  -> Relay fetch aborted
+  -> Relay request fiber interrupted
+  -> Exit fetch aborted and concurrency permit released
+  -> Exit request fiber interrupted
+  -> provider fetch and reader aborted
+  -> response readers and counters finalized
+```
+
+`Effect.tryPromise` receives the fiber's `AbortSignal`, so interrupting a
+request aborts the matching downstream fetch. Provider and service fetches
+combine that signal with the client signal and an Effect-managed deadline. The
+deadline fiber stays attached to the returned body after response headers
+arrive. The Web Stream finalizer interrupts it when the body ends or the
+consumer cancels. Stream adapters stay pull-based to preserve backpressure.
+They own their readers and finalizers. Success, failure, and downstream
+cancellation release locks, cancel unfinished upstream bodies, and return
+Relay concurrency permits exactly once.
+
+## Logging
+
+Effect `Config` controls the privacy-aware debug logger. The logger remains the
+request log sink because its views enforce the current trust boundaries. Relay
+debug records may contain tenant identity but never plaintext. Exit debug
+records may contain request content but never tenant identity. No trace context
+is forwarded between Relay and Exit.
+
+Each top-level request program has a named Effect span. In debug mode, each
+process connects to the local Effect DevTools server so VS Code can display its
+fibers, Context, spans, and metrics. Spans do not carry tenant IDs, prompts,
+ciphertext, credentials, keys, or a cross-service trace identifier. Shallot does
+not propagate trace context across the Relay-to-Exit privacy boundary.
+
+## Intentionally outside Effect
+
+`packages/protocol` remains unchanged and has no Effect dependency. HPKE, wire
+parsers, padding, frame authentication, response metadata, and bounded protocol
+helpers retain their current APIs and byte behavior.
+
+Fetch objects and Web Streams remain protocol adapters. The Vercel AI SDK and
+HPKE framing code consume those native interfaces. Response streams outlive the
+request Effect after the server sends headers, so their pull, backpressure,
+cancellation, and reader cleanup stay in the Web Stream API. The Relay's
+fail-fast concurrency permit is released by that stream finalizer for the same
+reason. Response coalescing keeps its native timer beside the pending
+`reader.read()` race instead of starting a new Effect runtime on every pull.
+
+Request sanitization, constant-time token comparison, byte queues, and
+deterministic mock response construction remain plain functions. They have no
+dependencies, asynchronous lifetime, or typed operational failures for Effect
+to manage.

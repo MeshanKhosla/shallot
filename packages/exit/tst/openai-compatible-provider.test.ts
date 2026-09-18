@@ -1,24 +1,50 @@
 import { describe, expect, test } from "bun:test";
-import { OpenAICompatibleProvider } from "../src/openai-compatible-provider.ts";
+import { Effect, Layer, Redacted } from "effect";
+import { LlmProvider } from "../src/llm-provider.ts";
+import {
+  openAICompatibleProviderLayer,
+  type ProviderFetch,
+  ProviderTransport,
+} from "../src/openai-compatible-provider.ts";
+
+const config = {
+  url: new URL("https://llm.example/v1/chat/completions"),
+  timeoutMs: 1_000,
+  policy: {
+    allowedModels: new Set(["test-model"]),
+    maxResponseBytes: 1024,
+  },
+};
+
+function complete(fetch: ProviderFetch, apiKey?: string, timeoutMs = config.timeoutMs) {
+  return Effect.gen(function* () {
+    const provider = yield* LlmProvider;
+    return yield* provider.complete({
+      model: "test-model",
+      messages: [],
+      stream: true,
+    });
+  }).pipe(
+    Effect.provide(
+      openAICompatibleProviderLayer({
+        ...config,
+        timeoutMs,
+        apiKey: apiKey === undefined ? undefined : Redacted.make(apiKey),
+      }).pipe(Layer.provide(Layer.succeed(ProviderTransport, { fetch }))),
+    ),
+  );
+}
 
 describe("OpenAI-compatible LLM provider", () => {
   test("owns upstream HTTP authentication and request forwarding", async () => {
     let observedUrl: string | undefined;
     let observedRequest: RequestInit | undefined;
-    const provider = new OpenAICompatibleProvider({
-      url: new URL("https://llm.example/v1/chat/completions"),
-      apiKey: "llm-secret",
-      timeoutMs: 1_000,
-      fetch: (async (input, init) => {
+    const response = await Effect.runPromise(
+      complete(async (input, init) => {
         observedUrl = input.toString();
         observedRequest = init;
         return Response.json({ choices: [] });
-      }) as typeof fetch,
-    });
-
-    const response = await provider.complete(
-      { model: "test-model", messages: [], stream: true },
-      new AbortController().signal,
+      }, "llm-secret"),
     );
 
     expect(response.status).toBe(200);
@@ -30,5 +56,49 @@ describe("OpenAI-compatible LLM provider", () => {
     expect(observedRequest?.body).toBe(
       '{"model":"test-model","messages":[],"stream":true}',
     );
+  });
+
+  test("aborts fetch when the Effect is interrupted", async () => {
+    let fetchWasAborted = false;
+    const cancellation = new AbortController();
+    const result = Effect.runPromise(
+      complete(
+        (_input, init) =>
+          new Promise<Response>((_resolve, reject) => {
+            init?.signal?.addEventListener(
+              "abort",
+              () => {
+                fetchWasAborted = true;
+                reject(init.signal?.reason);
+              },
+              { once: true },
+            );
+          }),
+      ),
+      { signal: cancellation.signal },
+    );
+
+    cancellation.abort("test interruption");
+    await expect(result).rejects.toThrow();
+    expect(fetchWasAborted).toBeTrue();
+  });
+
+  test("reports an Effect timeout", async () => {
+    const failure = await Effect.runPromise(
+      Effect.flip(
+        complete(
+          (_input, init) =>
+            new Promise<Response>((_resolve, reject) => {
+              init?.signal?.addEventListener("abort", () => reject(init.signal?.reason), {
+                once: true,
+              });
+            }),
+          undefined,
+          1,
+        ),
+      ),
+    );
+
+    expect(failure._tag).toBe("ProviderTimeout");
   });
 });

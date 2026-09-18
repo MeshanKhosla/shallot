@@ -1,30 +1,29 @@
-import type { LlmConfig } from "./llm-provider.ts";
-import { OpenAICompatibleProvider } from "./openai-compatible-provider.ts";
+import { positiveInteger } from "@shallot/server-runtime";
+import { Config, Effect, Option } from "effect";
+import type { OpenAICompatibleProviderConfig } from "./openai-compatible-provider.ts";
 
-export function loadLlmConfig(): LlmConfig {
-  const providerUrl = process.env.LLM_PROVIDER_URL;
-  if (!providerUrl) throw new Error("LLM_PROVIDER_URL is required");
-
-  const allowedModels = process.env.LLM_ALLOWED_MODELS?.split(",")
-    .map((model) => model.trim())
-    .filter(Boolean);
-
+export const loadLlmProviderConfig = Effect.gen(function* () {
+  const apiKey = yield* Config.Redacted("LLM_PROVIDER_API_KEY").pipe(Config.option);
+  const configuredModels = yield* Config.String("LLM_ALLOWED_MODELS").pipe(Config.option);
   return {
-    provider: new OpenAICompatibleProvider({
-      url: new URL(providerUrl),
-      apiKey: process.env.LLM_PROVIDER_API_KEY,
-      timeoutMs: positiveInteger("LLM_PROVIDER_TIMEOUT_MS", 60_000),
-    }),
-    allowedModels: allowedModels ? new Set(allowedModels) : undefined,
-    maxResponseBytes: positiveInteger("LLM_MAX_RESPONSE_BYTES", 16 * 1024 * 1024),
-  };
-}
-
-function positiveInteger(name: string, fallback: number): number {
-  const raw = process.env[name];
-  const value = raw === undefined ? fallback : Number(raw);
-  if (!Number.isSafeInteger(value) || value <= 0) {
-    throw new Error(`${name} must be a positive integer`);
-  }
-  return value;
-}
+    url: yield* Config.URL("LLM_PROVIDER_URL"),
+    apiKey: Option.getOrUndefined(apiKey),
+    timeoutMs: yield* positiveInteger("LLM_PROVIDER_TIMEOUT_MS", 60_000),
+    policy: {
+      allowedModels: Option.match(configuredModels, {
+        onNone: () => undefined,
+        onSome: (models) =>
+          new Set(
+            models
+              .split(",")
+              .map((model) => model.trim())
+              .filter(Boolean),
+          ),
+      }),
+      maxResponseBytes: yield* positiveInteger(
+        "LLM_MAX_RESPONSE_BYTES",
+        16 * 1024 * 1024,
+      ),
+    },
+  } satisfies OpenAICompatibleProviderConfig;
+});

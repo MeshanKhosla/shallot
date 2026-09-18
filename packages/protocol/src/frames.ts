@@ -89,6 +89,11 @@ class HpkeResponseOpener implements ResponseOpener {
   }
 }
 
+/**
+ * Creates the request-bound HPKE sender used to seal individual response
+ * frames. HTTP metadata, body chunking, and stream cancellation belong to the
+ * caller because they are transport policy, not cryptographic framing.
+ */
 export async function createResponseSealer(
   responsePublicKey: CryptoKey,
   requestId: string,

@@ -23,6 +23,15 @@ The end-to-end tests use the real `ai` and `@ai-sdk/openai-compatible` packages 
 bun run test:e2e
 ```
 
+The Sidecar, Relay, Exit, and mock provider run on Effect 4 RC and
+`@effect/platform-bun`. Effect owns each HTTP server, request fiber,
+configuration, service graph, error channel, tracing span, interruption, and
+server scope. Fetch requests, responses, abort signals, and Web Streams remain
+the adapters at the protocol and AI SDK boundaries.
+
+The protocol package has no Effect dependency. Its HPKE operations, wire
+validators, padding, framing, and bounded body reader remain independent.
+
 ## Run the local stack
 
 Start all four services with local development credentials and readable debug
@@ -36,16 +45,56 @@ The command creates `.shallot/keys` when needed and stops every service when it
 receives Ctrl-C. The individual commands are below for debugging one process at a
 time.
 
-To step through all four processes in VS Code, install the recommended Bun
-extension and start the inspector-enabled stack:
+To debug all four processes in VS Code, install the workspace's recommended
+extensions:
+
+- Effect Dev Tools (`effectful-tech.effect-vscode`)
+- TypeScript 7 (`TypeScriptTeam.native-preview`)
+- Bun for Visual Studio Code (`oven.bun-vscode`)
+
+The Bun extension provides the JavaScript debugger used for breakpoints,
+stepping, and variable inspection. Effect Dev Tools does not replace that
+debugger. It connects to the running Effect runtime and shows fibers, Context,
+span stacks, and defects. The TypeScript 7 extension enables the patched Effect
+language service, which adds Effect-specific diagnostics and editor hints.
+
+After `bun install`, reload VS Code and run `TypeScript: Enable TypeScript 7`
+from the command palette. Open the Effect Dev Tools panel and select `Start the
+server`, then start the inspector-enabled stack:
 
 ```sh
 bun run dev:debug
 ```
 
+This command enables the Effect DevTools client and raises the Sidecar, Relay,
+and provider deadlines to ten minutes so requests can remain paused at
+breakpoints. Explicit timeout environment values override the debug defaults.
+
 Open Run and Debug, select `Attach: Local Shallot stack`, and press F5. The
 compound configuration attaches to Provider, Exit, Relay, and Sidecar. Set
 breakpoints before sending a request to `http://127.0.0.1:8788/v1`.
+
+Send a request through the stack from another terminal:
+
+```sh
+curl http://127.0.0.1:8788/v1/chat/completions \
+  -H "Authorization: Bearer tenant-local" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "mock-text",
+    "messages": [
+      {
+        "role": "user",
+        "content": "Hello from the Sidecar"
+      }
+    ]
+  }'
+```
+
+Effect Dev Tools shows the paused fiber's Context, span stack, and sibling
+fibers, but the Bun debugger controls execution. Use Continue to move between
+breakpoints in different services. Step Over cannot cross an HTTP request
+because each service runs in a separate Bun process.
 
 Generate an X25519 Exit key pair. The private file is created with mode `0600`, is ignored by Git, and is never printed.
 

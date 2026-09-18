@@ -1,4 +1,5 @@
 {
+  "$schema": "./node_modules/@effect/tsgo/schema.json",
   "compilerOptions": {
     // Environment setup & latest features
     "lib": ["ESNext"],
@@ -21,6 +22,22 @@
     "noFallthroughCasesInSwitch": true,
     "noUncheckedIndexedAccess": true,
     "noImplicitOverride": true,
+
+    "plugins": [
+      {
+        "name": "@effect/language-service",
+        "overrides": [
+          {
+            "include": ["packages/server-runtime/src/deadline.ts"],
+            "options": {
+              "diagnosticSeverity": {
+                "abortControllerInEffect": "off"
+              }
+            }
+          }
+        ]
+      }
+    ],
 
     // Some stricter flags (disabled by default)
     "noUnusedLocals": false,

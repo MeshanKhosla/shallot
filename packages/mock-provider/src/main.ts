@@ -1,6 +1,4 @@
-import { createMockProviderServer } from "./mock-provider.ts";
+import { runServer } from "@shallot/server-runtime";
+import { createMockProviderApplication } from "./application.ts";
 
-const server = createMockProviderServer();
-console.log(
-  `shallot mock provider listening on http://${server.hostname}:${server.port}`,
-);
+runServer("mock provider", createMockProviderApplication);

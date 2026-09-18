@@ -1,4 +1,4 @@
-import { createRelayServer } from "./relay.ts";
+import { runServer } from "@shallot/server-runtime";
+import { createRelayApplication } from "./application.ts";
 
-const server = createRelayServer();
-console.log(`shallot relay listening on http://${server.hostname}:${server.port}`);
+runServer("relay", createRelayApplication);

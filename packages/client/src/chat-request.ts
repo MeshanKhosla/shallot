@@ -1,5 +1,9 @@
 import { BodyTooLargeError, readLimitedBody } from "@shallot/protocol";
-import { SidecarHttpError } from "./errors.ts";
+import {
+  SidecarInvalidRequest,
+  SidecarRequestTooLarge,
+  SidecarUnsupportedContentType,
+} from "./errors.ts";
 
 export interface ChatRequest {
   stream?: boolean;
@@ -17,11 +21,7 @@ export async function readChatRequest(
 ): Promise<ParsedChatRequest> {
   const mediaType = req.headers.get("content-type")?.split(";", 1).at(0)?.trim();
   if (mediaType !== "application/json") {
-    throw new SidecarHttpError(
-      415,
-      "content-type must be application/json",
-      "invalid_request_error",
-    );
+    throw new SidecarUnsupportedContentType();
   }
 
   let body: Uint8Array;
@@ -29,7 +29,7 @@ export async function readChatRequest(
     body = await readLimitedBody(req, maxRequestBytes);
   } catch (error) {
     if (error instanceof BodyTooLargeError) {
-      throw new SidecarHttpError(413, "request body is too large", "request_too_large");
+      throw new SidecarRequestTooLarge();
     }
     throw error;
   }
@@ -42,24 +42,20 @@ function parseJsonObject(body: Uint8Array): ChatRequest {
   try {
     value = JSON.parse(new TextDecoder().decode(body));
   } catch {
-    throw new SidecarHttpError(
-      400,
-      "request body must be valid JSON",
-      "invalid_request_error",
-    );
+    throw new SidecarInvalidRequest({
+      message: "request body must be valid JSON",
+    });
   }
 
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
-    throw new SidecarHttpError(
-      400,
-      "request body must be a JSON object",
-      "invalid_request_error",
-    );
+    throw new SidecarInvalidRequest({
+      message: "request body must be a JSON object",
+    });
   }
 
   const request = value as ChatRequest;
   if (request.stream !== undefined && typeof request.stream !== "boolean") {
-    throw new SidecarHttpError(400, "stream must be a boolean", "invalid_request_error");
+    throw new SidecarInvalidRequest({ message: "stream must be a boolean" });
   }
   return request;
 }

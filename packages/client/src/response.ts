@@ -13,7 +13,7 @@ import {
   type SealedFrame,
 } from "@shallot/protocol";
 import type { SidecarConfig } from "./config.ts";
-import { SidecarHttpError } from "./errors.ts";
+import { MalformedEncryptedResponse } from "./errors.ts";
 
 export async function createStreamingResponse(
   body: ReadableStream<Uint8Array>,
@@ -32,19 +32,18 @@ export async function createStreamingResponse(
       logger,
     );
   } catch {
-    throw new SidecarHttpError(
-      502,
-      "Relay returned an invalid encrypted response",
-      "upstream_error",
-    );
+    throw new MalformedEncryptedResponse();
   }
 
   const stream = new ReadableStream<Uint8Array>({
     async pull(controller) {
       try {
         const chunk = await opened.data.next();
-        if (chunk.done) controller.close();
-        else controller.enqueue(chunk.value);
+        if (chunk.done) {
+          controller.close();
+        } else {
+          controller.enqueue(chunk.value);
+        }
       } catch (error) {
         controller.error(error);
       }
@@ -75,6 +74,7 @@ export async function createBufferedResponse(
   const chunks: Uint8Array[] = [];
   let totalLength = 0;
   let opened: OpenedResponse;
+
   try {
     opened = await openEncryptedResponse(
       body,
@@ -88,11 +88,7 @@ export async function createBufferedResponse(
       totalLength += chunk.byteLength;
     }
   } catch {
-    throw new SidecarHttpError(
-      502,
-      "Relay returned an invalid encrypted response",
-      "upstream_error",
-    );
+    throw new MalformedEncryptedResponse();
   }
 
   const responseBody = new Uint8Array(totalLength);
@@ -101,6 +97,7 @@ export async function createBufferedResponse(
     responseBody.set(chunk, offset);
     offset += chunk.byteLength;
   }
+
   return new Response(responseBody, {
     status: opened.head.status,
     headers: { "content-type": opened.head.contentType },
@@ -176,6 +173,11 @@ interface DecryptedFrame {
   payload: Buffer;
 }
 
+/**
+ * Reads bounded NDJSON frames, opens the response HPKE context from frame zero,
+ * and authenticates each frame in sequence. Frame count and plaintext limits
+ * are checked after decryption because padding hides the plaintext size.
+ */
 async function* decryptResponseFrames(
   body: ReadableStream<Uint8Array>,
   responsePrivateKey: CryptoKey,
@@ -198,6 +200,8 @@ async function* decryptResponseFrames(
 
     const frame = parseFrame(line);
     if (!opener) {
+      // HPKE sends its encapsulated key once. Later frames reuse the response
+      // context created from the first frame.
       if (!frame.encapsulatedKey) {
         throw new Error("first response frame is missing its encapsulated key");
       }
@@ -240,6 +244,11 @@ interface OpenedResponse {
   cancel(): Promise<void>;
 }
 
+/**
+ * Opens and validates the response head before any HTTP response reaches the
+ * caller. The returned data generator then permits only data frames and owns
+ * cancellation of the encrypted upstream body.
+ */
 async function openEncryptedResponse(
   body: ReadableStream<Uint8Array>,
   responsePrivateKey: CryptoKey,
@@ -265,6 +274,8 @@ async function openEncryptedResponse(
     }
     head = decodeResponseHead(first.value.payload);
   } catch (error) {
+    // A bad head cannot produce a trustworthy status or content type, so stop
+    // the encrypted stream before returning control to the HTTP adapter.
     cancellation.abort("invalid encrypted response head");
     await frames.return(undefined).catch(() => undefined);
     throw error;

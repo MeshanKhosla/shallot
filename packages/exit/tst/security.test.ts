@@ -1,16 +1,19 @@
 import { describe, expect, test } from "bun:test";
+import { Effect, ManagedRuntime, Redacted } from "effect";
+import { TestClock } from "effect/testing";
 import { MemoryReplayCache } from "../src/replay-cache.ts";
+import { ReplayProtection, replayProtectionLayer } from "../src/replay-protection.ts";
 import { sanitizeChatRequest } from "../src/sanitize-request.ts";
 import { requireRelayAuthorization } from "../src/service-auth.ts";
 
 describe("Exit security controls", () => {
   test("authenticates only the Relay service token", () => {
     expect(() =>
-      requireRelayAuthorization("Bearer relay-token", "relay-token"),
+      requireRelayAuthorization("Bearer relay-token", Redacted.make("relay-token")),
     ).not.toThrow();
-    expect(() => requireRelayAuthorization("Bearer tenant-token", "relay-token")).toThrow(
-      "Relay authentication failed",
-    );
+    expect(() =>
+      requireRelayAuthorization("Bearer tenant-token", Redacted.make("relay-token")),
+    ).toThrow("Relay authentication failed");
   });
 
   test("removes identity and unknown fields from provider requests", () => {
@@ -72,18 +75,60 @@ describe("Exit security controls", () => {
   });
 
   test("expires replay entries", () => {
-    let now = 1_000;
-    const cache = new MemoryReplayCache(100, () => now);
+    const cache = new MemoryReplayCache(100);
 
-    expect(cache.claim("envelope-one")).toBeTrue();
-    expect(cache.claim("envelope-one")).toBeFalse();
-    now += 101;
-    expect(cache.claim("envelope-one")).toBeTrue();
+    expect(cache.claim("envelope-one", 1_000)).toBeTrue();
+    expect(cache.claim("envelope-one", 1_000)).toBeFalse();
+    expect(cache.claim("envelope-one", 1_101)).toBeTrue();
+  });
+
+  test("does not expire entries when the wall clock moves backward", () => {
+    const cache = new MemoryReplayCache(100);
+
+    expect(cache.claim("envelope-one", 1_000)).toBeTrue();
+    expect(cache.claim("envelope-two", 900)).toBeTrue();
+    expect(cache.claim("envelope-two", 1_050)).toBeFalse();
   });
 
   test("bounds replay entries", () => {
-    const cache = new MemoryReplayCache(100, () => 1_000, 1);
-    expect(cache.claim("envelope-one")).toBeTrue();
-    expect(() => cache.claim("envelope-two")).toThrow("replay cache is full");
+    const cache = new MemoryReplayCache(100, 1);
+    expect(cache.claim("envelope-one", 1_000)).toBeTrue();
+    expect(() => cache.claim("envelope-two", 1_000)).toThrow("replay cache is full");
+  });
+
+  test("uses the Effect clock for replay expiry", async () => {
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const protection = yield* ReplayProtection;
+        yield* TestClock.setTime(1_000);
+        expect(yield* protection.claim("envelope-one")).toBeTrue();
+        expect(yield* protection.claim("envelope-one")).toBeFalse();
+        yield* TestClock.adjust(101);
+        expect(yield* protection.claim("envelope-one")).toBeTrue();
+      }).pipe(
+        Effect.provide([
+          replayProtectionLayer({ ttlMs: 100, maxEntries: 10 }),
+          TestClock.layer(),
+        ]),
+      ),
+    );
+  });
+
+  test("allocates independent replay state for each Layer build", async () => {
+    const layer = replayProtectionLayer({ ttlMs: 60_000, maxEntries: 10 });
+    const first = ManagedRuntime.make(layer);
+    const second = ManagedRuntime.make(layer);
+    const claim = Effect.gen(function* () {
+      const protection = yield* ReplayProtection;
+      return yield* protection.claim("same-envelope");
+    });
+
+    try {
+      expect(await first.runPromise(claim)).toBeTrue();
+      expect(await first.runPromise(claim)).toBeFalse();
+      expect(await second.runPromise(claim)).toBeTrue();
+    } finally {
+      await Promise.all([first.dispose(), second.dispose()]);
+    }
   });
 });

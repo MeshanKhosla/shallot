@@ -54,6 +54,6 @@ The bounded in-memory replay and request caches protect one process only. A mult
 
 ## What the tests establish
 
-The automated suite proves that the implemented HTTP path works with the Vercel AI SDK for buffered text, streaming text, tools, structured output, and provider errors. It checks authentication boundaries, nested sanitizer behavior, bounded replay tracking, padding boundaries, malformed wire values, wrong keys, authenticated-data tampering, response limits, backpressure, cancellation, and plaintext canaries on both sides of the Relay.
+The automated suite proves that the implemented HTTP path works with the Vercel AI SDK for buffered text, streaming text, tools, structured output, and provider errors. It checks authentication boundaries, nested sanitizer behavior, bounded replay tracking, padding boundaries, malformed wire values, wrong keys, authenticated-data tampering, response limits, backpressure, and plaintext canaries on both sides of the Relay. It also aborts an AI SDK stream and verifies that cancellation reaches the mock provider through the Sidecar, Relay, and Exit. Focused tests verify reader cleanup, Relay permit release after success, failure, and cancellation, controlled provider timeouts, tagged error translation, and redaction of unexpected defects.
 
 Tests can show that selected identity and plaintext canaries are absent at observed boundaries. They cannot prove organizational non-collusion, eliminate traffic analysis, audit the cryptographic dependency, or validate a future production deployment.
