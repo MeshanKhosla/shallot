@@ -9,7 +9,7 @@ const runConfig = <A, E>(config: Effect.Effect<A, E>) =>
     config.pipe(
       Effect.provideService(
         ConfigProvider.ConfigProvider,
-        ConfigProvider.fromEnv({ env: process.env }),
+        ConfigProvider.fromUnknown(process.env),
       ),
     ),
   );

@@ -7,11 +7,8 @@ import {
   type RelayFetch,
 } from "../src/exit-client.ts";
 
-function transport(
-  fetch: RelayFetch,
-  timeoutSignal = AbortSignal.timeout,
-): ExitTransport["Service"] {
-  return { fetch, timeoutSignal };
+function transport(fetch: RelayFetch): ExitTransport["Service"] {
+  return { fetch };
 }
 
 const config = {
@@ -65,8 +62,7 @@ describe("Relay Exit client", () => {
     expect(fetchWasAborted).toBeTrue();
   });
 
-  test("reports timeout from a controlled timeout signal", async () => {
-    const timeout = new AbortController();
+  test("reports an Effect timeout", async () => {
     const configured = transport(
       (_input, init) =>
         new Promise<Response>((_resolve, reject) => {
@@ -74,11 +70,22 @@ describe("Relay Exit client", () => {
             once: true,
           });
         }),
-      () => timeout.signal,
     );
-    const failure = Effect.runPromise(Effect.flip(forward(configured)));
+    const failure = await Effect.runPromise(
+      Effect.flip(
+        Effect.gen(function* () {
+          const client = yield* ExitClient;
+          return yield* client.forward("{}", new AbortController().signal);
+        }).pipe(
+          Effect.provide(
+            exitClientLayer({ ...config, timeoutMs: 1 }).pipe(
+              Layer.provide(Layer.succeed(ExitTransport, configured)),
+            ),
+          ),
+        ),
+      ),
+    );
 
-    timeout.abort("controlled timeout");
-    expect((await failure)._tag).toBe("ExitTimeout");
+    expect(failure._tag).toBe("ExitTimeout");
   });
 });

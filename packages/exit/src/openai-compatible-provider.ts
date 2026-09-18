@@ -20,13 +20,11 @@ export class ProviderTransport extends Context.Service<
   ProviderTransport,
   {
     readonly fetch: ProviderFetch;
-    readonly timeoutSignal: (timeoutMs: number) => AbortSignal;
   }
 >()("@shallot/exit/ProviderTransport") {}
 
 export const providerTransportLive = Layer.succeed(ProviderTransport, {
   fetch,
-  timeoutSignal: AbortSignal.timeout,
 });
 
 export function openAICompatibleProviderLive(
@@ -70,24 +68,17 @@ class OpenAICompatibleProvider implements LlmProviderService {
     }
 
     return Effect.tryPromise({
-      try: (effectSignal) => {
-        const timeoutSignal = this.transport.timeoutSignal(this.config.timeoutMs);
-        return this.transport
-          .fetch(this.config.url, {
-            method: "POST",
-            headers,
-            body: JSON.stringify(request),
-            signal: AbortSignal.any([clientSignal, effectSignal, timeoutSignal]),
-          })
-          .catch((cause) => {
-            if (timeoutSignal.aborted && !clientSignal.aborted) {
-              throw new ProviderTimeout();
-            }
-            throw cause;
-          });
-      },
-      catch: (cause) =>
-        cause instanceof ProviderTimeout ? cause : new ProviderTransportFailure(),
-    });
+      try: (effectSignal) =>
+        this.transport.fetch(this.config.url, {
+          method: "POST",
+          headers,
+          body: JSON.stringify(request),
+          signal: AbortSignal.any([clientSignal, effectSignal]),
+        }),
+      catch: () => new ProviderTransportFailure(),
+    }).pipe(
+      Effect.timeout(this.config.timeoutMs),
+      Effect.catchTag("TimeoutError", () => Effect.fail(new ProviderTimeout())),
+    );
   }
 }

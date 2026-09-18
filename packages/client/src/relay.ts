@@ -37,13 +37,11 @@ export class RelayTransport extends Context.Service<
   RelayTransport,
   {
     readonly fetch: SidecarFetch;
-    readonly timeoutSignal: (timeoutMs: number) => AbortSignal;
   }
 >()("@shallot/client/RelayTransport") {}
 
 export const relayTransportLive = Layer.succeed(RelayTransport, {
   fetch,
-  timeoutSignal: AbortSignal.timeout,
 });
 
 export function relayClientLayer(
@@ -56,20 +54,19 @@ export function relayClientLayer(
       return RelayClient.of({
         forward: (request, envelope) =>
           Effect.gen(function* () {
-            const timeout = transport.timeoutSignal(config.timeoutMs);
             const response = yield* Effect.tryPromise({
               try: (effectSignal) =>
                 transport.fetch(config.url, {
                   method: "POST",
                   headers: relayHeaders(request),
                   body: JSON.stringify(envelope),
-                  signal: AbortSignal.any([request.signal, effectSignal, timeout]),
+                  signal: AbortSignal.any([request.signal, effectSignal]),
                 }),
-              catch: () =>
-                timeout.aborted && !request.signal.aborted
-                  ? new RelayTimeout()
-                  : new RelayTransportFailure(),
-            });
+              catch: () => new RelayTransportFailure(),
+            }).pipe(
+              Effect.timeout(config.timeoutMs),
+              Effect.catchTag("TimeoutError", () => Effect.fail(new RelayTimeout())),
+            );
 
             if (!response.ok) {
               yield* Effect.promise(async () => {

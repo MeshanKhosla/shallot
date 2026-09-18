@@ -86,7 +86,7 @@ describe("Sidecar Relay client", () => {
     const result = Effect.runPromise(
       forward(
         harness.config,
-        { fetch: harness.fetch, timeoutSignal: AbortSignal.timeout },
+        { fetch: harness.fetch },
         harness.request,
         harness.envelope,
       ),
@@ -99,8 +99,7 @@ describe("Sidecar Relay client", () => {
     expect(fetchWasAborted).toBeTrue();
   });
 
-  test("reports timeout from a controlled timeout signal", async () => {
-    const timeout = new AbortController();
+  test("reports an Effect timeout", async () => {
     const harness = await setup(
       (_input, init) =>
         new Promise<Response>((_resolve, reject) => {
@@ -109,18 +108,17 @@ describe("Sidecar Relay client", () => {
           });
         }),
     );
-    const failure = Effect.runPromise(
+    const failure = await Effect.runPromise(
       Effect.flip(
         forward(
-          harness.config,
-          { fetch: harness.fetch, timeoutSignal: () => timeout.signal },
+          { ...harness.config, relayTimeoutMs: 1 },
+          { fetch: harness.fetch },
           harness.request,
           harness.envelope,
         ),
       ),
     );
 
-    timeout.abort("controlled timeout");
-    expect((await failure)._tag).toBe("RelayTimeout");
+    expect(failure._tag).toBe("RelayTimeout");
   });
 });

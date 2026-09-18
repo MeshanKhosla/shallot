@@ -16,11 +16,7 @@ const config = {
   },
 };
 
-function complete(
-  fetch: ProviderFetch,
-  timeoutSignal = AbortSignal.timeout,
-  apiKey?: string,
-) {
+function complete(fetch: ProviderFetch, apiKey?: string, timeoutMs = config.timeoutMs) {
   return Effect.gen(function* () {
     const provider = yield* LlmProvider;
     return yield* provider.complete(
@@ -31,8 +27,9 @@ function complete(
     Effect.provide(
       openAICompatibleProviderLayer({
         ...config,
+        timeoutMs,
         apiKey: apiKey === undefined ? undefined : Redacted.make(apiKey),
-      }).pipe(Layer.provide(Layer.succeed(ProviderTransport, { fetch, timeoutSignal }))),
+      }).pipe(Layer.provide(Layer.succeed(ProviderTransport, { fetch }))),
     ),
   );
 }
@@ -42,15 +39,11 @@ describe("OpenAI-compatible LLM provider", () => {
     let observedUrl: string | undefined;
     let observedRequest: RequestInit | undefined;
     const response = await Effect.runPromise(
-      complete(
-        async (input, init) => {
-          observedUrl = input.toString();
-          observedRequest = init;
-          return Response.json({ choices: [] });
-        },
-        AbortSignal.timeout,
-        "llm-secret",
-      ),
+      complete(async (input, init) => {
+        observedUrl = input.toString();
+        observedRequest = init;
+        return Response.json({ choices: [] });
+      }, "llm-secret"),
     );
 
     expect(response.status).toBe(200);
@@ -89,9 +82,8 @@ describe("OpenAI-compatible LLM provider", () => {
     expect(fetchWasAborted).toBeTrue();
   });
 
-  test("reports timeout from a controlled timeout signal", async () => {
-    const timeout = new AbortController();
-    const failure = Effect.runPromise(
+  test("reports an Effect timeout", async () => {
+    const failure = await Effect.runPromise(
       Effect.flip(
         complete(
           (_input, init) =>
@@ -100,12 +92,12 @@ describe("OpenAI-compatible LLM provider", () => {
                 once: true,
               });
             }),
-          () => timeout.signal,
+          undefined,
+          1,
         ),
       ),
     );
 
-    timeout.abort("controlled timeout");
-    expect((await failure)._tag).toBe("ProviderTimeout");
+    expect(failure._tag).toBe("ProviderTimeout");
   });
 });

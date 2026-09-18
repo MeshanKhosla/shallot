@@ -60,7 +60,6 @@ function services(config: RelayConfig, exitFetch: RelayFetch) {
       Layer.provide(
         Layer.succeed(ExitTransport, {
           fetch: exitFetch,
-          timeoutSignal: AbortSignal.timeout,
         }),
       ),
     ),

@@ -8,7 +8,7 @@ const runConfig = () =>
     loadConfig.pipe(
       Effect.provideService(
         ConfigProvider.ConfigProvider,
-        ConfigProvider.fromEnv({ env: process.env }),
+        ConfigProvider.fromUnknown(process.env),
       ),
     ),
   );

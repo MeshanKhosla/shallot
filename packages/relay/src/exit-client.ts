@@ -38,13 +38,11 @@ export class ExitTransport extends Context.Service<
   ExitTransport,
   {
     readonly fetch: RelayFetch;
-    readonly timeoutSignal: (timeoutMs: number) => AbortSignal;
   }
 >()("@shallot/relay/ExitTransport") {}
 
 export const exitTransportLive = Layer.succeed(ExitTransport, {
   fetch,
-  timeoutSignal: AbortSignal.timeout,
 });
 
 export function exitClientLayer(
@@ -62,20 +60,19 @@ export function exitClientLayer(
       return ExitClient.of({
         forward: (rawBody, clientSignal) =>
           Effect.gen(function* () {
-            const timeout = transport.timeoutSignal(config.timeoutMs);
             const response = yield* Effect.tryPromise({
               try: (effectSignal) =>
                 transport.fetch(config.url, {
                   method: "POST",
                   headers,
                   body: rawBody,
-                  signal: AbortSignal.any([clientSignal, effectSignal, timeout]),
+                  signal: AbortSignal.any([clientSignal, effectSignal]),
                 }),
-              catch: () =>
-                timeout.aborted && !clientSignal.aborted
-                  ? new ExitTimeout()
-                  : new ExitTransportFailure(),
-            });
+              catch: () => new ExitTransportFailure(),
+            }).pipe(
+              Effect.timeout(config.timeoutMs),
+              Effect.catchTag("TimeoutError", () => Effect.fail(new ExitTimeout())),
+            );
 
             if (!response.ok) {
               yield* Effect.promise(async () => {
