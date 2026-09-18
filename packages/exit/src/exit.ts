@@ -26,10 +26,7 @@ import {
 import { LlmProvider, type LlmProviderService } from "./llm-provider.ts";
 import { ReplayProtection, replayProtectionLayer } from "./replay-protection.ts";
 import { sealProviderResponse } from "./response-sealer.ts";
-import {
-  sanitizeChatRequest,
-  type SanitizedChatRequest,
-} from "./sanitize-request.ts";
+import { sanitizeChatRequest, type SanitizedChatRequest } from "./sanitize-request.ts";
 import { requireRelayAuthorization } from "./service-auth.ts";
 
 export type ExitServices = LlmProvider | ReplayProtection;
@@ -99,9 +96,7 @@ export const handleExitRequest = Effect.fn("handleExitRequest")(function* (
   const opened = yield* openEnvelope(envelope, config);
   const provider = yield* LlmProvider;
   const replayProtection = yield* ReplayProtection;
-  if (
-    !(yield* replayProtection.claim(`${envelope.keyId}:${envelope.encapsulatedKey}`))
-  ) {
+  if (!(yield* replayProtection.claim(`${envelope.keyId}:${envelope.encapsulatedKey}`))) {
     return yield* new ExitReplayDetected();
   }
 
