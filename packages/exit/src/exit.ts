@@ -26,7 +26,7 @@ import {
 import { LlmProvider, type LlmProviderService } from "./llm-provider.ts";
 import { ReplayProtection, replayProtectionLayer } from "./replay-protection.ts";
 import { sealProviderResponse } from "./response-sealer.ts";
-import { sanitizeChatRequest, type SanitizedChatRequest } from "./sanitize-request.ts";
+import { type SanitizedChatRequest, sanitizeChatRequest } from "./sanitize-request.ts";
 import { requireRelayAuthorization } from "./service-auth.ts";
 
 export type ExitServices = LlmProvider | ReplayProtection;

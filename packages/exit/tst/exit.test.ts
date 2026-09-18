@@ -4,15 +4,15 @@ import {
   createResponseOpener,
   decodeResponseHead,
   parseSealedFrame,
-  sealRequest,
-  SEALED_STREAM_CONTENT_TYPE,
   type ResponseHead,
+  SEALED_STREAM_CONTENT_TYPE,
   type SealedRequest,
+  sealRequest,
 } from "@shallot/protocol";
 import { Effect, Layer } from "effect";
 import type { ExitConfig } from "../src/config.ts";
-import { createExitServer } from "../src/exit.ts";
 import { ProviderTimeout } from "../src/errors.ts";
+import { createExitServer } from "../src/exit.ts";
 import { LlmProvider, type LlmProviderService } from "../src/llm-provider.ts";
 import { ReplayProtection, replayProtectionLayer } from "../src/replay-protection.ts";
 
