@@ -6,24 +6,22 @@ export interface ProviderObservation {
 export interface MockProviderConfig {
   hostname: string;
   port: number;
-  expectedApiKey?: string;
+  expectedApiKey?: Redacted.Redacted<string>;
   chunkDelayMs: number;
 }
 
-export function loadConfig(): MockProviderConfig {
+export const loadConfig = Effect.gen(function* () {
+  const expectedApiKey = yield* Config.Redacted("MOCK_PROVIDER_API_KEY").pipe(
+    Config.option,
+  );
   return {
-    hostname: process.env.MOCK_PROVIDER_HOSTNAME ?? "127.0.0.1",
-    port: nonNegativeInteger("MOCK_PROVIDER_PORT", 8785),
-    expectedApiKey: process.env.MOCK_PROVIDER_API_KEY,
-    chunkDelayMs: nonNegativeInteger("MOCK_PROVIDER_CHUNK_DELAY_MS", 1),
-  };
-}
-
-function nonNegativeInteger(name: string, fallback: number): number {
-  const raw = process.env[name];
-  const value = raw === undefined ? fallback : Number(raw);
-  if (!Number.isSafeInteger(value) || value < 0) {
-    throw new Error(`${name} must be a non-negative integer`);
-  }
-  return value;
-}
+    hostname: yield* Config.String("MOCK_PROVIDER_HOSTNAME").pipe(
+      Config.withDefault("127.0.0.1"),
+    ),
+    port: yield* nonNegativeInteger("MOCK_PROVIDER_PORT", 8785),
+    expectedApiKey: Option.getOrUndefined(expectedApiKey),
+    chunkDelayMs: yield* nonNegativeInteger("MOCK_PROVIDER_CHUNK_DELAY_MS", 1),
+  } satisfies MockProviderConfig;
+});
+import { nonNegativeInteger } from "@shallot/server-runtime";
+import { Config, Effect, Option, type Redacted } from "effect";

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { Effect, Layer } from "effect";
+import { Effect, Layer, Redacted } from "effect";
 import { LlmProvider } from "../src/llm-provider.ts";
 import {
   openAICompatibleProviderLayer,
@@ -29,9 +29,10 @@ function complete(
     );
   }).pipe(
     Effect.provide(
-      openAICompatibleProviderLayer({ ...config, apiKey }).pipe(
-        Layer.provide(Layer.succeed(ProviderTransport, { fetch, timeoutSignal })),
-      ),
+      openAICompatibleProviderLayer({
+        ...config,
+        apiKey: apiKey === undefined ? undefined : Redacted.make(apiKey),
+      }).pipe(Layer.provide(Layer.succeed(ProviderTransport, { fetch, timeoutSignal }))),
     ),
   );
 }

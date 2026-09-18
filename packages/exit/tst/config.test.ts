@@ -1,7 +1,20 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { generateKeyPairSync } from "node:crypto";
+import { ConfigProvider, Effect, Redacted } from "effect";
 import { loadConfig } from "../src/config.ts";
 import { loadLlmProviderConfig } from "../src/llm-config.ts";
+
+const runConfig = <A, E>(config: Effect.Effect<A, E>) =>
+  Effect.runSync(
+    config.pipe(
+      Effect.provideService(
+        ConfigProvider.ConfigProvider,
+        ConfigProvider.fromEnv({ env: process.env }),
+      ),
+    ),
+  );
+const runExitConfig = () => runConfig(loadConfig);
+const runProviderConfig = () => runConfig(loadLlmProviderConfig);
 
 const EXIT_ENV = [
   "EXIT_PRIVATE_KEY",
@@ -46,19 +59,19 @@ afterEach(() => {
 describe("Exit config", () => {
   test("requires a private key", () => {
     process.env.EXIT_RELAY_TOKEN = "relay-token";
-    expect(() => loadConfig()).toThrow("EXIT_PRIVATE_KEY is required");
+    expect(runExitConfig).toThrow("EXIT_PRIVATE_KEY");
   });
 
   test("requires a relay token", () => {
     process.env.EXIT_PRIVATE_KEY = privateKeyPem();
-    expect(() => loadConfig()).toThrow("EXIT_RELAY_TOKEN is required");
+    expect(runExitConfig).toThrow("EXIT_RELAY_TOKEN");
   });
 
   test("rejects an invalid port", () => {
     process.env.EXIT_PRIVATE_KEY = privateKeyPem();
     process.env.EXIT_RELAY_TOKEN = "relay-token";
     process.env.EXIT_PORT = "0";
-    expect(() => loadConfig()).toThrow("EXIT_PORT must be a positive integer");
+    expect(runExitConfig).toThrow();
   });
 
   test("loads a full configuration", () => {
@@ -69,11 +82,11 @@ describe("Exit config", () => {
     process.env.EXIT_KEY_ID = "rotated-key";
     process.env.EXIT_REPLAY_MAX_ENTRIES = "3";
 
-    const config = loadConfig();
+    const config = runExitConfig();
 
     expect(config.hostname).toBe("exit.internal");
     expect(config.port).toBe(9900);
-    expect(config.relayToken).toBe("relay-token");
+    expect(Redacted.value(config.relayToken)).toBe("relay-token");
     expect(config.privateKeys.has("rotated-key")).toBeTrue();
     expect(config.privateKeys.size).toBe(1);
     expect(config.replayMaxEntries).toBe(3);
@@ -84,7 +97,7 @@ describe("Exit config", () => {
     process.env.EXIT_PRIVATE_KEY = privateKeyPem();
     process.env.EXIT_RELAY_TOKEN = "relay-token";
 
-    const config = loadConfig();
+    const config = runExitConfig();
 
     expect(config.port).toBe(8786);
     expect(config.hostname).toBe("127.0.0.1");
@@ -94,21 +107,17 @@ describe("Exit config", () => {
 
 describe("LLM provider config", () => {
   test("requires a provider URL", () => {
-    expect(() => loadLlmProviderConfig()).toThrow("LLM_PROVIDER_URL is required");
+    expect(runProviderConfig).toThrow("LLM_PROVIDER_URL");
   });
 
   test("rejects invalid limits", () => {
     process.env.LLM_PROVIDER_URL = "https://provider.example/v1/chat/completions";
     process.env.LLM_PROVIDER_TIMEOUT_MS = "0";
-    expect(() => loadLlmProviderConfig()).toThrow(
-      "LLM_PROVIDER_TIMEOUT_MS must be a positive integer",
-    );
+    expect(runProviderConfig).toThrow();
 
     delete process.env.LLM_PROVIDER_TIMEOUT_MS;
     process.env.LLM_MAX_RESPONSE_BYTES = "1.5";
-    expect(() => loadLlmProviderConfig()).toThrow(
-      "LLM_MAX_RESPONSE_BYTES must be a positive integer",
-    );
+    expect(runProviderConfig).toThrow();
   });
 
   test("loads provider credentials, policy, and defaults", () => {
@@ -116,10 +125,10 @@ describe("LLM provider config", () => {
     process.env.LLM_PROVIDER_API_KEY = "provider-token";
     process.env.LLM_ALLOWED_MODELS = "model-one, model-two";
 
-    const config = loadLlmProviderConfig();
+    const config = runProviderConfig();
 
     expect(config.url).toEqual(new URL("https://provider.example/v1/chat/completions"));
-    expect(config.apiKey).toBe("provider-token");
+    expect(Redacted.value(config.apiKey!)).toBe("provider-token");
     expect(config.timeoutMs).toBe(60_000);
     expect(config.policy.allowedModels).toEqual(new Set(["model-one", "model-two"]));
     expect(config.policy.maxResponseBytes).toBe(16 * 1024 * 1024);

@@ -1,8 +1,8 @@
 import { createDebugLogger, formatBodyForDebug } from "@shallot/observability";
 import { bindRuntimeLifecycle, recoverDefect } from "@shallot/server-runtime";
 import type { Server } from "bun";
-import { Effect, Layer, ManagedRuntime } from "effect";
-import { loadConfig, type MockProviderConfig } from "./config.ts";
+import { Effect, Layer, ManagedRuntime, Redacted } from "effect";
+import type { MockProviderConfig } from "./config.ts";
 import {
   type MockProviderRequestError,
   ProviderAuthenticationError,
@@ -19,7 +19,7 @@ export interface MockProviderHooks {
 }
 
 export function createMockProviderServer(
-  config: MockProviderConfig = loadConfig(),
+  config: MockProviderConfig,
   hooks: MockProviderHooks = {},
 ): Server<undefined> {
   const logger = createDebugLogger("provider");
@@ -53,7 +53,7 @@ export const handleMockProviderRequest = Effect.fnUntraced(function* (
   }
   if (
     config.expectedApiKey &&
-    req.headers.get("authorization") !== `Bearer ${config.expectedApiKey}`
+    req.headers.get("authorization") !== `Bearer ${Redacted.value(config.expectedApiKey)}`
   ) {
     return yield* new ProviderAuthenticationError();
   }

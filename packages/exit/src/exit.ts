@@ -10,7 +10,7 @@ import {
 } from "@shallot/protocol";
 import { bindRuntimeLifecycle, recoverDefect } from "@shallot/server-runtime";
 import type { Server } from "bun";
-import { Effect, Layer, ManagedRuntime } from "effect";
+import { Effect, Layer, ManagedRuntime, Redacted } from "effect";
 import type { ExitConfig } from "./config.ts";
 import {
   ExitAuthenticationError,
@@ -139,7 +139,7 @@ export const handleExitRequest = Effect.fnUntraced(function* (
 
 function authenticateRelay(
   authorization: string | null,
-  expectedToken: string,
+  expectedToken: Redacted.Redacted<string>,
 ): Effect.Effect<void, ExitAuthenticationError> {
   return Effect.try({
     try: () => requireRelayAuthorization(authorization, expectedToken),

@@ -9,7 +9,7 @@ import {
   type SealedRequest,
   sealRequest,
 } from "@shallot/protocol";
-import { Effect, Layer } from "effect";
+import { Effect, Layer, Redacted } from "effect";
 import type { ExitConfig } from "../src/config.ts";
 import { ProviderTimeout } from "../src/errors.ts";
 import { createExitServer } from "../src/exit.ts";
@@ -57,7 +57,7 @@ function config(privateKeys: Map<string, KeyObject>): ExitConfig {
   return {
     hostname: "127.0.0.1",
     port: 0,
-    relayToken: "relay-token",
+    relayToken: Redacted.make("relay-token"),
     privateKeys,
     maxEnvelopeBytes: 4096,
     responsePaddingBytes: 256,

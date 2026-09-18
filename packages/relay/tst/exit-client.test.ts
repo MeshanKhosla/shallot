@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { Effect, Layer } from "effect";
+import { Effect, Layer, Redacted } from "effect";
 import {
   ExitClient,
   ExitTransport,
@@ -16,7 +16,7 @@ function transport(
 
 const config = {
   url: new URL("https://exit.example/v1/chat/completions"),
-  token: "exit-token",
+  token: Redacted.make("exit-token"),
   timeoutMs: 1_000,
 };
 

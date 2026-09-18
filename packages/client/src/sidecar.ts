@@ -4,7 +4,7 @@ import { bindRuntimeLifecycle, recoverDefect } from "@shallot/server-runtime";
 import type { Server } from "bun";
 import { Effect, Layer, ManagedRuntime } from "effect";
 import { readChatRequest } from "./chat-request.ts";
-import { loadConfig, type SidecarConfig } from "./config.ts";
+import type { SidecarConfig } from "./config.ts";
 import {
   MalformedEncryptedResponse,
   SidecarInvalidRequest,
@@ -19,7 +19,7 @@ import { RelayClient, relayClientLayer, relayTransportLive } from "./relay.ts";
 import { createBufferedResponse, createStreamingResponse } from "./response.ts";
 
 export function createSidecarServer(
-  config: SidecarConfig = loadConfig(),
+  config: SidecarConfig,
   services: Layer.Layer<RelayClient> = sidecarLive(config),
 ): Server<undefined> {
   const logger = createDebugLogger("sidecar");

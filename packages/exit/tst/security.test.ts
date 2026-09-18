@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { Effect, ManagedRuntime } from "effect";
+import { Effect, ManagedRuntime, Redacted } from "effect";
 import { TestClock } from "effect/testing";
 import { MemoryReplayCache } from "../src/replay-cache.ts";
 import { ReplayProtection, replayProtectionLayer } from "../src/replay-protection.ts";
@@ -9,11 +9,11 @@ import { requireRelayAuthorization } from "../src/service-auth.ts";
 describe("Exit security controls", () => {
   test("authenticates only the Relay service token", () => {
     expect(() =>
-      requireRelayAuthorization("Bearer relay-token", "relay-token"),
+      requireRelayAuthorization("Bearer relay-token", Redacted.make("relay-token")),
     ).not.toThrow();
-    expect(() => requireRelayAuthorization("Bearer tenant-token", "relay-token")).toThrow(
-      "Relay authentication failed",
-    );
+    expect(() =>
+      requireRelayAuthorization("Bearer tenant-token", Redacted.make("relay-token")),
+    ).toThrow("Relay authentication failed");
   });
 
   test("removes identity and unknown fields from provider requests", () => {

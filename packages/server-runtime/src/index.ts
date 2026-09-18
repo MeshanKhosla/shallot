@@ -1,3 +1,4 @@
+export { nonNegativeInteger, positiveInteger } from "./config.ts";
 export {
   type DefectDiagnostic,
   type DefectReporter,

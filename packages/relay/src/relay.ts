@@ -9,9 +9,9 @@ import {
 } from "@shallot/protocol";
 import { bindRuntimeLifecycle, recoverDefect } from "@shallot/server-runtime";
 import type { Server } from "bun";
-import { Effect, Layer, ManagedRuntime } from "effect";
+import { Effect, Layer, ManagedRuntime, Redacted } from "effect";
 import { ConcurrencyLimiter, concurrencyLimiterLayer } from "./concurrency-limiter.ts";
-import { loadConfig, type RelayConfig } from "./config.ts";
+import type { RelayConfig } from "./config.ts";
 import {
   RelayInvalidRequest,
   RelayReplayDetected,
@@ -35,7 +35,7 @@ export type RelayServices =
   | RelayObserver;
 
 export function createRelayServer(
-  config: RelayConfig = loadConfig(),
+  config: RelayConfig,
   services: Layer.Layer<RelayServices> = relayLive(config),
 ): Server<undefined> {
   const logger = createDebugLogger("relay");
@@ -120,7 +120,7 @@ export const handleRelayRequest = Effect.fnUntraced(function* (
     const observer = yield* RelayObserver;
     yield* Effect.sync(() => {
       const forwardedHeaders = new Headers({
-        authorization: `Bearer ${config.exitToken}`,
+        authorization: `Bearer ${Redacted.value(config.exitToken)}`,
         "content-type": "application/json",
       });
       observer.observeRequest({

@@ -4,3 +4,4 @@ export {
   type ProviderObservation,
 } from "./config.ts";
 export { createMockProviderServer, type MockProviderHooks } from "./mock-provider.ts";
+export { createMockProviderApplication } from "./application.ts";

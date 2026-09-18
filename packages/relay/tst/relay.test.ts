@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { generateKeyPairSync } from "node:crypto";
 import { sealRequest } from "@shallot/protocol";
-import { Layer } from "effect";
+import { Layer, Redacted } from "effect";
 import { concurrencyLimiterLayer } from "../src/concurrency-limiter.ts";
 import type { RelayConfig } from "../src/config.ts";
 import { ExitTransport, exitClientLayer, type RelayFetch } from "../src/exit-client.ts";
@@ -32,8 +32,8 @@ function config(): RelayConfig {
     hostname: "127.0.0.1",
     port: 0,
     exitUrl: new URL("https://exit.example/v1/chat/completions"),
-    exitToken: "exit-token",
-    tenantTokens: new Map([["tenant-one", "tenant-token"]]),
+    exitToken: Redacted.make("exit-token"),
+    tenantTokens: new Map([["tenant-one", Redacted.make("tenant-token")]]),
     requestTtlMs: 60_000,
     maxRequestEntries: 100,
     maxRequestEntriesPerTenant: 100,

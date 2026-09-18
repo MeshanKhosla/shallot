@@ -1,4 +1,6 @@
 import { parseX25519PublicKey } from "@shallot/protocol";
+import { positiveInteger } from "@shallot/server-runtime";
+import { Config, Effect } from "effect";
 
 export interface SidecarConfig {
   hostname: string;
@@ -14,36 +16,31 @@ export interface SidecarConfig {
   maxResponseBytes: number;
 }
 
-export function loadConfig(): SidecarConfig {
-  const publicKey = process.env.SIDECAR_EXIT_PUBLIC_KEY;
-  if (!publicKey) {
-    throw new Error("SIDECAR_EXIT_PUBLIC_KEY is required");
-  }
-
-  const relayUrl = new URL(
-    process.env.SIDECAR_RELAY_URL ?? "http://127.0.0.1:8787/v1/chat/completions",
-  );
-
+export const loadConfig = Effect.gen(function* () {
+  const publicKey = yield* Config.NonEmptyString("SIDECAR_EXIT_PUBLIC_KEY");
   return {
-    hostname: process.env.SIDECAR_HOSTNAME ?? "127.0.0.1",
-    port: positiveInteger("SIDECAR_PORT", 8788),
-    relayUrl,
+    hostname: yield* Config.String("SIDECAR_HOSTNAME").pipe(
+      Config.withDefault("127.0.0.1"),
+    ),
+    port: yield* Config.Port("SIDECAR_PORT").pipe(Config.withDefault(8788)),
+    relayUrl: yield* Config.URL("SIDECAR_RELAY_URL").pipe(
+      Config.withDefault(new URL("http://127.0.0.1:8787/v1/chat/completions")),
+    ),
     exitPublicKey: parseX25519PublicKey(publicKey),
-    exitKeyId: process.env.SIDECAR_EXIT_KEY_ID ?? "local",
-    requestPaddingBytes: positiveInteger("SIDECAR_REQUEST_PADDING_BYTES", 4096),
-    maxRequestBytes: positiveInteger("SIDECAR_MAX_REQUEST_BYTES", 2 * 1024 * 1024),
-    relayTimeoutMs: positiveInteger("SIDECAR_RELAY_TIMEOUT_MS", 65_000),
-    maxResponseLineBytes: positiveInteger("SIDECAR_MAX_RESPONSE_LINE_BYTES", 64 * 1024),
-    maxResponseFrames: positiveInteger("SIDECAR_MAX_RESPONSE_FRAMES", 10_000),
-    maxResponseBytes: positiveInteger("SIDECAR_MAX_RESPONSE_BYTES", 16 * 1024 * 1024),
-  };
-}
-
-function positiveInteger(name: string, fallback: number): number {
-  const raw = process.env[name];
-  const value = raw === undefined ? fallback : Number(raw);
-  if (!Number.isSafeInteger(value) || value <= 0) {
-    throw new Error(`${name} must be a positive integer`);
-  }
-  return value;
-}
+    exitKeyId: yield* Config.String("SIDECAR_EXIT_KEY_ID").pipe(
+      Config.withDefault("local"),
+    ),
+    requestPaddingBytes: yield* positiveInteger("SIDECAR_REQUEST_PADDING_BYTES", 4096),
+    maxRequestBytes: yield* positiveInteger("SIDECAR_MAX_REQUEST_BYTES", 2 * 1024 * 1024),
+    relayTimeoutMs: yield* positiveInteger("SIDECAR_RELAY_TIMEOUT_MS", 65_000),
+    maxResponseLineBytes: yield* positiveInteger(
+      "SIDECAR_MAX_RESPONSE_LINE_BYTES",
+      64 * 1024,
+    ),
+    maxResponseFrames: yield* positiveInteger("SIDECAR_MAX_RESPONSE_FRAMES", 10_000),
+    maxResponseBytes: yield* positiveInteger(
+      "SIDECAR_MAX_RESPONSE_BYTES",
+      16 * 1024 * 1024,
+    ),
+  } satisfies SidecarConfig;
+});

@@ -1,6 +1,17 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { generateKeyPairSync } from "node:crypto";
+import { ConfigProvider, Effect } from "effect";
 import { loadConfig } from "../src/config.ts";
+
+const runConfig = () =>
+  Effect.runSync(
+    loadConfig.pipe(
+      Effect.provideService(
+        ConfigProvider.ConfigProvider,
+        ConfigProvider.fromEnv({ env: process.env }),
+      ),
+    ),
+  );
 
 const SIDECAR_ENV = [
   "SIDECAR_EXIT_PUBLIC_KEY",
@@ -40,13 +51,13 @@ afterEach(() => {
 
 describe("Sidecar config", () => {
   test("requires an exit public key", () => {
-    expect(() => loadConfig()).toThrow("SIDECAR_EXIT_PUBLIC_KEY is required");
+    expect(runConfig).toThrow("SIDECAR_EXIT_PUBLIC_KEY");
   });
 
   test("rejects an invalid port", () => {
     process.env.SIDECAR_EXIT_PUBLIC_KEY = publicKeyPem();
     process.env.SIDECAR_PORT = "-2";
-    expect(() => loadConfig()).toThrow("SIDECAR_PORT must be a positive integer");
+    expect(runConfig).toThrow();
   });
 
   test("loads a full configuration", () => {
@@ -57,7 +68,7 @@ describe("Sidecar config", () => {
     process.env.SIDECAR_EXIT_KEY_ID = "rotated";
     process.env.SIDECAR_MAX_RESPONSE_FRAMES = "42";
 
-    const config = loadConfig();
+    const config = runConfig();
 
     expect(config.hostname).toBe("127.0.0.9");
     expect(config.port).toBe(9100);
@@ -72,7 +83,7 @@ describe("Sidecar config", () => {
   test("parses a PEM exit public key and applies defaults", () => {
     process.env.SIDECAR_EXIT_PUBLIC_KEY = publicKeyPem();
 
-    const config = loadConfig();
+    const config = runConfig();
 
     expect(config.exitKeyId).toBe("local");
     expect(config.port).toBe(8788);

@@ -8,3 +8,4 @@ export {
   type SidecarFetch,
 } from "./relay.ts";
 export { createSidecarServer, sidecarLive } from "./sidecar.ts";
+export { createSidecarApplication } from "./application.ts";

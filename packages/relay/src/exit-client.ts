@@ -1,5 +1,5 @@
 import { SEALED_STREAM_CONTENT_TYPE } from "@shallot/protocol";
-import { Context, Effect, Layer } from "effect";
+import { Context, Effect, Layer, Redacted } from "effect";
 import {
   ExitEmptyResponse,
   ExitRejected,
@@ -20,7 +20,7 @@ export type RelayFetch = (
 
 export interface ExitClientConfig {
   readonly url: URL;
-  readonly token: string;
+  readonly token: Redacted.Redacted<string>;
   readonly timeoutMs: number;
 }
 
@@ -52,7 +52,7 @@ export function exitClientLayer(
 ): Layer.Layer<ExitClient, never, ExitTransport> {
   const headers = new Headers({
     accept: SEALED_STREAM_CONTENT_TYPE,
-    authorization: `Bearer ${config.token}`,
+    authorization: `Bearer ${Redacted.value(config.token)}`,
     "content-type": "application/json",
   });
   return Layer.effect(

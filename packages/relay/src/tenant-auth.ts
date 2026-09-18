@@ -1,5 +1,5 @@
 import { createHash, timingSafeEqual } from "node:crypto";
-import { Context, Effect, Layer } from "effect";
+import { Context, Effect, Layer, Redacted } from "effect";
 import { RelayAuthenticationError } from "./errors.ts";
 
 export interface TenantIdentity {
@@ -29,10 +29,10 @@ function digest(value: string): Buffer {
 export class StaticTenantAuthenticator implements TenantAuthenticatorService {
   private readonly credentials: TenantCredential[];
 
-  constructor(tokens: ReadonlyMap<string, string>) {
+  constructor(tokens: ReadonlyMap<string, Redacted.Redacted<string>>) {
     this.credentials = [...tokens].map(([id, token]) => ({
       id,
-      tokenDigest: digest(token),
+      tokenDigest: digest(Redacted.value(token)),
     }));
     if (this.credentials.length === 0) {
       throw new Error("at least one tenant credential is required");
@@ -62,7 +62,7 @@ export class StaticTenantAuthenticator implements TenantAuthenticatorService {
 }
 
 export function tenantAuthenticatorLayer(
-  tokens: ReadonlyMap<string, string>,
+  tokens: ReadonlyMap<string, Redacted.Redacted<string>>,
 ): Layer.Layer<TenantAuthenticator> {
   return Layer.succeed(TenantAuthenticator, new StaticTenantAuthenticator(tokens));
 }

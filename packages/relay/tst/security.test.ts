@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { Effect, ManagedRuntime } from "effect";
+import { Effect, ManagedRuntime, Redacted } from "effect";
 import { TestClock } from "effect/testing";
 import {
   MemoryRequestTracker,
@@ -12,8 +12,8 @@ describe("Relay security controls", () => {
   test("authenticates a configured tenant token", () => {
     const authenticator = new StaticTenantAuthenticator(
       new Map([
-        ["tenant-one", "token-one"],
-        ["tenant-two", "token-two"],
+        ["tenant-one", Redacted.make("token-one")],
+        ["tenant-two", Redacted.make("token-two")],
       ]),
     );
 

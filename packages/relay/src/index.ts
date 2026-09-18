@@ -23,3 +23,4 @@ export {
   type TenantIdentity,
   tenantAuthenticatorLayer,
 } from "./tenant-auth.ts";
+export { createRelayApplication } from "./application.ts";

@@ -14,6 +14,7 @@ import {
   relayObserverLayer,
 } from "@shallot/relay";
 import { generateText, Output, stepCountIs, streamText, tool } from "ai";
+import { Redacted } from "effect";
 import { z } from "zod";
 
 const TENANT_TOKEN = "tenant-canary-secret";
@@ -56,7 +57,7 @@ function setupGateway(options: { providerChunkDelayMs?: number } = {}) {
     {
       hostname: "127.0.0.1",
       port: 0,
-      expectedApiKey: PROVIDER_TOKEN,
+      expectedApiKey: Redacted.make(PROVIDER_TOKEN),
       chunkDelayMs: options.providerChunkDelayMs ?? 1,
     },
     {
@@ -72,7 +73,7 @@ function setupGateway(options: { providerChunkDelayMs?: number } = {}) {
   const exitConfig = {
     hostname: "127.0.0.1",
     port: 0,
-    relayToken: EXIT_TOKEN,
+    relayToken: Redacted.make(EXIT_TOKEN),
     privateKeys: new Map([["test-key", exitKeys.privateKey]]),
     maxEnvelopeBytes: 256 * 1024,
     responsePaddingBytes: 512,
@@ -82,7 +83,7 @@ function setupGateway(options: { providerChunkDelayMs?: number } = {}) {
   };
   const providerLayer = openAICompatibleProviderLive({
     url: new URL(`http://127.0.0.1:${provider.port}/v1/chat/completions`),
-    apiKey: PROVIDER_TOKEN,
+    apiKey: Redacted.make(PROVIDER_TOKEN),
     timeoutMs: 5_000,
     policy: {
       allowedModels: new Set([
@@ -102,8 +103,8 @@ function setupGateway(options: { providerChunkDelayMs?: number } = {}) {
     hostname: "127.0.0.1",
     port: 0,
     exitUrl: new URL(`http://127.0.0.1:${exit.port}/v1/chat/completions`),
-    exitToken: EXIT_TOKEN,
-    tenantTokens: new Map([["tenant-one", TENANT_TOKEN]]),
+    exitToken: Redacted.make(EXIT_TOKEN),
+    tenantTokens: new Map([["tenant-one", Redacted.make(TENANT_TOKEN)]]),
     requestTtlMs: 60_000,
     maxRequestEntries: 10_000,
     maxRequestEntriesPerTenant: 1_000,

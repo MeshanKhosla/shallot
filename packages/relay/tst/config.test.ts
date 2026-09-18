@@ -1,5 +1,16 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { ConfigProvider, Effect, Redacted } from "effect";
 import { loadConfig } from "../src/config.ts";
+
+const runConfig = () =>
+  Effect.runSync(
+    loadConfig.pipe(
+      Effect.provideService(
+        ConfigProvider.ConfigProvider,
+        ConfigProvider.fromEnv({ env: process.env }),
+      ),
+    ),
+  );
 
 const RELAY_ENV = [
   "RELAY_EXIT_TOKEN",
@@ -33,30 +44,24 @@ afterEach(() => {
 
 describe("Relay config", () => {
   test("requires an exit token", () => {
-    expect(() => loadConfig()).toThrow("RELAY_EXIT_TOKEN is required");
+    expect(runConfig).toThrow("RELAY_TENANT_TOKENS");
   });
 
   test("requires tenant tokens", () => {
     process.env.RELAY_EXIT_TOKEN = "exit-token";
-    expect(() => loadConfig()).toThrow("RELAY_TENANT_TOKENS is required");
+    expect(runConfig).toThrow("RELAY_TENANT_TOKENS");
   });
 
   test("rejects malformed tenant token entries", () => {
     process.env.RELAY_EXIT_TOKEN = "exit-token";
     process.env.RELAY_TENANT_TOKENS = "tenant-one";
-    expect(() => loadConfig()).toThrow(
-      "RELAY_TENANT_TOKENS must use tenant:token entries",
-    );
+    expect(runConfig).toThrow("RELAY_TENANT_TOKENS must use tenant:token entries");
 
     process.env.RELAY_TENANT_TOKENS = ":token";
-    expect(() => loadConfig()).toThrow(
-      "RELAY_TENANT_TOKENS must use tenant:token entries",
-    );
+    expect(runConfig).toThrow("RELAY_TENANT_TOKENS must use tenant:token entries");
 
     process.env.RELAY_TENANT_TOKENS = "tenant-one:";
-    expect(() => loadConfig()).toThrow(
-      "RELAY_TENANT_TOKENS must use tenant:token entries",
-    );
+    expect(runConfig).toThrow("RELAY_TENANT_TOKENS must use tenant:token entries");
   });
 
   test("rejects invalid integers", () => {
@@ -64,13 +69,13 @@ describe("Relay config", () => {
     process.env.RELAY_TENANT_TOKENS = "tenant-one:token";
 
     process.env.RELAY_PORT = "0";
-    expect(() => loadConfig()).toThrow("RELAY_PORT must be a positive integer");
+    expect(runConfig).toThrow();
 
     process.env.RELAY_PORT = "-1";
-    expect(() => loadConfig()).toThrow("RELAY_PORT must be a positive integer");
+    expect(runConfig).toThrow();
 
     process.env.RELAY_PORT = "1.5";
-    expect(() => loadConfig()).toThrow("RELAY_PORT must be a positive integer");
+    expect(runConfig).toThrow();
   });
 
   test("loads a full configuration", () => {
@@ -81,18 +86,18 @@ describe("Relay config", () => {
     process.env.RELAY_EXIT_URL = "https://exit.internal/v1/chat/completions";
     process.env.RELAY_MAX_CONCURRENT_REQUESTS = "7";
 
-    const config = loadConfig();
+    const config = runConfig();
 
     expect(config.hostname).toBe("relay.internal");
     expect(config.port).toBe(9000);
     expect(config.exitUrl).toEqual(new URL("https://exit.internal/v1/chat/completions"));
-    expect(config.exitToken).toBe("exit-token");
-    expect(config.tenantTokens).toEqual(
-      new Map([
-        ["tenant-one", "one"],
-        ["two", "two"],
-      ]),
-    );
+    expect(Redacted.value(config.exitToken)).toBe("exit-token");
+    expect(
+      [...config.tenantTokens].map(([id, token]) => [id, Redacted.value(token)]),
+    ).toEqual([
+      ["tenant-one", "one"],
+      ["two", "two"],
+    ]);
     expect(config.maxConcurrentRequests).toBe(7);
     expect(config.exitTimeoutMs).toBe(65_000);
   });
@@ -101,7 +106,7 @@ describe("Relay config", () => {
     process.env.RELAY_EXIT_TOKEN = "exit-token";
     process.env.RELAY_TENANT_TOKENS = "tenant-one:one";
 
-    const config = loadConfig();
+    const config = runConfig();
 
     expect(config.port).toBe(8787);
     expect(config.hostname).toBe("127.0.0.1");

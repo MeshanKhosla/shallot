@@ -1,4 +1,4 @@
-import { Context, Effect, Layer } from "effect";
+import { Context, Effect, Layer, Redacted } from "effect";
 import { ProviderTimeout, ProviderTransportFailure } from "./errors.ts";
 import {
   LlmProvider,
@@ -11,7 +11,7 @@ export type ProviderFetch = (input: URL, init: RequestInit) => Promise<Response>
 
 export interface OpenAICompatibleProviderConfig {
   url: URL;
-  apiKey?: string;
+  apiKey?: Redacted.Redacted<string>;
   timeoutMs: number;
   policy: LlmProviderPolicy;
 }
@@ -66,7 +66,7 @@ class OpenAICompatibleProvider implements LlmProviderService {
       "content-type": "application/json",
     });
     if (this.config.apiKey) {
-      headers.set("authorization", `Bearer ${this.config.apiKey}`);
+      headers.set("authorization", `Bearer ${Redacted.value(this.config.apiKey)}`);
     }
 
     return Effect.tryPromise({

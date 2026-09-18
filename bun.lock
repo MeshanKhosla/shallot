@@ -31,6 +31,7 @@
         "@shallot/mock-provider": "workspace:*",
         "@shallot/relay": "workspace:*",
         "ai": "^7.0.102",
+        "effect": "4.0.0-rc.115",
         "zod": "^4.6.5",
       },
     },
