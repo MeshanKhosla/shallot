@@ -134,25 +134,24 @@ export const handleRelayRequest = Effect.fn("handleRelayRequest")(function* (
       });
     });
 
-    // The Effect owns the permit until the response body takes over its cleanup.
-    handedOff = true;
-    return new Response(
-      proxyBody(responseBody, permit, (chunk) => {
-        logger.debug("response.chunk.received", {
-          tenantId: tenant.id,
-          requestId: envelope.requestId,
-          encryptedBytes: chunk.byteLength,
-        });
-        observer.observeResponseChunk(chunk);
-      }),
-      {
-        status: 200,
-        headers: {
-          "cache-control": "no-store",
-          "content-type": SEALED_STREAM_CONTENT_TYPE,
-        },
+    const body = proxyBody(responseBody, permit, (chunk) => {
+      logger.debug("response.chunk.received", {
+        tenantId: tenant.id,
+        requestId: envelope.requestId,
+        encryptedBytes: chunk.byteLength,
+      });
+      observer.observeResponseChunk(chunk);
+    });
+    const response = new Response(body, {
+      status: 200,
+      headers: {
+        "cache-control": "no-store",
+        "content-type": SEALED_STREAM_CONTENT_TYPE,
       },
-    );
+    });
+    // The response body owns the permit only once construction succeeds.
+    handedOff = true;
+    return response;
   }).pipe(
     Effect.ensuring(
       Effect.sync(() => {
@@ -190,35 +189,65 @@ function readEnvelope(
   });
 }
 
+interface ProxyReadDoneResult {
+  done: true;
+  value?: Uint8Array;
+}
+
+interface ProxyReadValueResult {
+  done: false;
+  value: Uint8Array;
+}
+
+type ProxyReadResult = ProxyReadDoneResult | ProxyReadValueResult;
+
 function proxyBody(
   body: ReadableStream<Uint8Array>,
   permit: RequestPermit,
   observe?: (chunk: Uint8Array) => void,
 ): ReadableStream<Uint8Array> {
   const reader = body.getReader();
+  let finished = false;
+  let pendingRead: Promise<ProxyReadResult> | null = null;
+
+  async function end(reason: unknown): Promise<void> {
+    if (finished) return;
+    finished = true;
+
+    permit.release();
+    const pending = pendingRead;
+    pendingRead = null;
+    await reader.cancel(reason).catch(() => undefined);
+    if (pending) await pending.catch(() => undefined);
+    reader.releaseLock();
+  }
 
   return new ReadableStream({
     async pull(controller) {
+      const read = reader.read();
+      pendingRead = read;
+      let result: ProxyReadResult;
       try {
-        const result = await reader.read();
-        if (result.done) {
-          permit.release();
-          reader.releaseLock();
-          controller.close();
-        } else {
-          observe?.(result.value);
-          controller.enqueue(result.value);
-        }
+        result = await read;
       } catch (error) {
-        permit.release();
-        reader.releaseLock();
+        if (finished) return;
+        pendingRead = null;
         controller.error(error);
+        await end(error);
+        return;
+      }
+      if (finished) return;
+      pendingRead = null;
+      if (result.done) {
+        controller.close();
+        await end(undefined);
+      } else {
+        observe?.(result.value);
+        controller.enqueue(result.value);
       }
     },
     async cancel(reason) {
-      permit.release();
-      await reader.cancel(reason);
-      reader.releaseLock();
+      await end(reason);
     },
   });
 }
