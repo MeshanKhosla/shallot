@@ -1,4 +1,8 @@
-export { nonNegativeInteger, positiveInteger } from "./config.ts";
+export {
+  debugLoggingEnabled,
+  nonNegativeInteger,
+  positiveInteger,
+} from "./config.ts";
 export {
   type DefectDiagnostic,
   DefectReporter,

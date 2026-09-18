@@ -11,7 +11,7 @@ export interface DebugLogger {
   debug(event: string, view: Record<string, unknown>): void;
 }
 
-interface DebugLoggerOptions {
+export interface DebugLoggerOptions {
   enabled?: boolean;
   sink?: (entry: DebugLogEntry) => void;
 }
@@ -46,7 +46,7 @@ export function createDebugLogger(
   component: string,
   options: DebugLoggerOptions = {},
 ): DebugLogger {
-  const enabled = options.enabled ?? process.env.SHALLOT_LOG_LEVEL === "debug";
+  const enabled = options.enabled ?? false;
   const sink =
     options.sink ?? ((entry: DebugLogEntry) => console.log(formatDebugEntry(entry)));
 

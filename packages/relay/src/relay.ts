@@ -1,4 +1,8 @@
-import { createDebugLogger, formatCiphertextPreview } from "@shallot/observability";
+import {
+  createDebugLogger,
+  type DebugLogger,
+  formatCiphertextPreview,
+} from "@shallot/observability";
 import {
   BodyTooLargeError,
   PATHS,
@@ -42,10 +46,15 @@ export type RelayServices =
 export function createRelayServer(
   config: RelayConfig,
   services: Layer.Layer<RelayServices> = relayLive(config),
-  diagnostics: Layer.Layer<DefectReporter> = defectReporterLive,
+  options: {
+    readonly diagnostics?: Layer.Layer<DefectReporter>;
+    readonly logger?: DebugLogger;
+  } = {},
 ): Server<undefined> {
-  const logger = createDebugLogger("relay");
-  const runtime = ManagedRuntime.make(Layer.merge(services, diagnostics));
+  const logger = options.logger ?? createDebugLogger("relay");
+  const runtime = ManagedRuntime.make(
+    Layer.merge(services, options.diagnostics ?? defectReporterLive),
+  );
   const server = Bun.serve({
     port: config.port,
     hostname: config.hostname,

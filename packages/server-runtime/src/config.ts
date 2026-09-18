@@ -13,3 +13,8 @@ export function nonNegativeInteger(
 ): Config.Config<number> {
   return Config.schema(NonNegativeInteger, name).pipe(Config.withDefault(fallback));
 }
+
+export const debugLoggingEnabled = Config.String("SHALLOT_LOG_LEVEL").pipe(
+  Config.withDefault("info"),
+  Config.map((level) => level.toLowerCase() === "debug"),
+);
