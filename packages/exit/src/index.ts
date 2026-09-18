@@ -14,9 +14,4 @@ export {
   ProviderTransport,
   providerTransportLive,
 } from "./openai-compatible-provider.ts";
-export {
-  MemoryReplayCache,
-  type ReplayCache,
-  ReplayCacheCapacityError,
-} from "./replay-cache.ts";
 export { type SanitizedChatRequest, sanitizeChatRequest } from "./sanitize-request.ts";

@@ -328,7 +328,8 @@ describe("AI SDK through Shallot", () => {
       },
       body: envelope,
     });
-    expect(exitReplay.status).toBe(409);
+    expect(exitReplay.status).toBe(200);
+    expect(exitReplay.headers.get("content-type")).toBe("application/x-ndjson");
     expect(gateway.providerObservations).toHaveLength(1);
   });
 });

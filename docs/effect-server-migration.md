@@ -101,11 +101,14 @@ authentication, and request-validation failures.
 
 Provider HTTP error responses are successful transport results. The Exit seals
 their status and body exactly as it does now. It does not retry provider calls.
+Once the Exit opens an HPKE envelope, it also seals request validation, replay,
+and replay-capacity errors. Errors that occur before decryption remain plaintext
+HTTP responses because the Exit does not yet have an authenticated response key.
 
 Provider timeouts are a distinct, tagged error: the Exit seals a `504` with
 `AI provider timed out` and the OpenAI-compatible `provider_error` type instead
 of folding it into the old generic `502` umbrella. A provider response that
-exceeds `maxResponseBytes` does not produce an HTTP error at all — the sealed
+exceeds `maxResponseBytes` does not produce an HTTP error. The sealed
 stream simply errors its reader partway, so the client sees an aborted encrypted
 response rather than a successful one. The Relay and Sidecar map their own
 upstream timeouts and transport failures to `502` independently; those statuses

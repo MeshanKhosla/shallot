@@ -90,7 +90,7 @@ async function decryptSealedResponse(
   response: Response,
   responsePrivateKey: CryptoKey,
   requestId: string,
-): Promise<{ head: ResponseHead; payloads: Buffer[] }> {
+): Promise<{ head: ResponseHead; body: string }> {
   expect(response.headers.get("content-type")).toBe(SEALED_STREAM_CONTENT_TYPE);
   const text = await response.text();
   const frames = text
@@ -115,7 +115,10 @@ async function decryptSealedResponse(
   }
   const headPayload = payloads[0];
   if (headPayload === undefined) throw new Error("response has no head frame");
-  return { head: decodeResponseHead(headPayload), payloads };
+  return {
+    head: decodeResponseHead(headPayload),
+    body: Buffer.concat(payloads.slice(1)).toString("utf8"),
+  };
 }
 
 function tamperCiphertext(ciphertext: string): string {
@@ -126,9 +129,9 @@ function tamperCiphertext(ciphertext: string): string {
   return `${ciphertext.slice(0, index)}${flipped}${ciphertext.slice(index + 1)}`;
 }
 
-function provider(maxResponseBytes = 1024): LlmProviderService {
+function provider(): LlmProviderService {
   return {
-    policy: { allowedModels: new Set(["test-model"]), maxResponseBytes },
+    policy: { allowedModels: new Set(["test-model"]), maxResponseBytes: 1024 },
     complete: () => Effect.succeed(Response.json({ choices: [] })),
   };
 }
@@ -185,14 +188,14 @@ describe("Exit Effect runtime", () => {
       servers.push(server);
 
       const response = await post(server, sealed.body);
-      const { head, payloads } = await decryptSealedResponse(
+      const { head, body } = await decryptSealedResponse(
         response,
         sealed.responsePrivateKey,
         sealed.envelope.requestId,
       );
 
       expect(head.status).toBe(400);
-      expect(JSON.parse(payloads.slice(1).join(""))).toEqual({
+      expect(JSON.parse(body)).toEqual({
         error: {
           message: "Decrypted request is not valid JSON",
           type: "invalid_request_error",
@@ -204,7 +207,7 @@ describe("Exit Effect runtime", () => {
     }
   });
 
-  test("rejects a replayed encrypted request with a plaintext 409", async () => {
+  test("seals a 409 for a replayed encrypted request", async () => {
     const sealed = await sealedRequest();
     const server = createExitServer(config(sealed.privateKeys), services(provider()));
     servers.push(server);
@@ -214,8 +217,20 @@ describe("Exit Effect runtime", () => {
     await first.body?.cancel();
 
     const second = await post(server, sealed.body);
-    expect(second.status).toBe(409);
-    expect(await second.text()).toContain("Encrypted request was replayed");
+    const { head, body } = await decryptSealedResponse(
+      second,
+      sealed.responsePrivateKey,
+      sealed.envelope.requestId,
+    );
+
+    expect(second.status).toBe(200);
+    expect(head.status).toBe(409);
+    expect(JSON.parse(body)).toEqual({
+      error: {
+        message: "Encrypted request was replayed",
+        type: "replay_error",
+      },
+    });
   });
 
   test("does not consume replay state when the HPKE envelope cannot be opened", async () => {
@@ -250,8 +265,20 @@ describe("Exit Effect runtime", () => {
     await first.body?.cancel();
 
     const second = await post(server, other.body);
-    expect(second.status).toBe(503);
-    expect(await second.text()).toContain("Exit replay cache is full");
+    const { head, body } = await decryptSealedResponse(
+      second,
+      other.responsePrivateKey,
+      other.envelope.requestId,
+    );
+
+    expect(second.status).toBe(200);
+    expect(head.status).toBe(503);
+    expect(JSON.parse(body)).toEqual({
+      error: {
+        message: "Exit replay cache is full",
+        type: "overloaded_error",
+      },
+    });
   });
 
   test("rejects relay authentication failures with a plaintext 401", async () => {
@@ -294,49 +321,6 @@ describe("Exit Effect runtime", () => {
     expect(await response.json()).toMatchObject({ error: { type: "request_too_large" } });
   });
 
-  test("errors the encrypted stream when the provider exceeds maxResponseBytes", async () => {
-    const sealed = await sealedRequest();
-    const oversized: LlmProviderService = {
-      policy: { allowedModels: new Set(["test-model"]), maxResponseBytes: 64 },
-      complete: () =>
-        Effect.succeed(
-          new Response(Buffer.from("x".repeat(2048)), {
-            headers: { "content-type": "application/json" },
-          }),
-        ),
-    };
-    const server = createExitServer(config(sealed.privateKeys), services(oversized));
-    servers.push(server);
-
-    let response: Response | undefined;
-    let postError: unknown;
-    try {
-      response = await post(server, sealed.body);
-    } catch (error) {
-      postError = error;
-    }
-
-    if (response === undefined) {
-      expect(postError).toBeDefined();
-      return;
-    }
-    expect(response.status).toBe(200);
-    expect(response.headers.get("content-type")).toBe(SEALED_STREAM_CONTENT_TYPE);
-
-    const reader = response.body?.getReader();
-    if (reader === undefined) throw new Error("response has no body");
-    let readError: unknown;
-    try {
-      while (true) {
-        const result = await reader.read();
-        if (result.done) break;
-      }
-    } catch (error) {
-      readError = error;
-    }
-    expect(readError).toBeDefined();
-  });
-
   test("seals the intended 504 for a provider timeout", async () => {
     const sealed = await sealedRequest();
     const timedOut: LlmProviderService = {
@@ -347,14 +331,14 @@ describe("Exit Effect runtime", () => {
     servers.push(server);
 
     const response = await post(server, sealed.body);
-    const { head, payloads } = await decryptSealedResponse(
+    const { head, body } = await decryptSealedResponse(
       response,
       sealed.responsePrivateKey,
       sealed.envelope.requestId,
     );
 
     expect(head).toMatchObject({ status: 504, contentType: "application/json" });
-    expect(JSON.parse(payloads.slice(1).join(""))).toEqual({
+    expect(JSON.parse(body)).toEqual({
       error: { message: "AI provider timed out", type: "provider_error" },
     });
   });

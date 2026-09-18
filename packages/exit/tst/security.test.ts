@@ -82,6 +82,14 @@ describe("Exit security controls", () => {
     expect(cache.claim("envelope-one", 1_101)).toBeTrue();
   });
 
+  test("does not expire entries when the wall clock moves backward", () => {
+    const cache = new MemoryReplayCache(100);
+
+    expect(cache.claim("envelope-one", 1_000)).toBeTrue();
+    expect(cache.claim("envelope-two", 900)).toBeTrue();
+    expect(cache.claim("envelope-two", 1_050)).toBeFalse();
+  });
+
   test("bounds replay entries", () => {
     const cache = new MemoryReplayCache(100, 1);
     expect(cache.claim("envelope-one", 1_000)).toBeTrue();
