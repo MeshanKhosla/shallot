@@ -9,10 +9,11 @@ import {
   type SealedRequest,
   sealRequest,
 } from "@shallot/protocol";
+import { launchHttpServer } from "@shallot/server-runtime";
 import { Effect, Layer, Redacted } from "effect";
 import type { ExitConfig } from "../src/config.ts";
 import { ProviderTimeout } from "../src/errors.ts";
-import { createExitServer } from "../src/exit.ts";
+import { createExitServer, type ExitServices } from "../src/exit.ts";
 import { LlmProvider, type LlmProviderService } from "../src/llm-provider.ts";
 import { ReplayProtection, replayProtectionLayer } from "../src/replay-protection.ts";
 
@@ -75,6 +76,13 @@ function services(
   }),
 ) {
   return Layer.mergeAll(Layer.succeed(LlmProvider, provider), replayProtection);
+}
+
+function startExitServer(
+  configured: ExitConfig,
+  dependencies: Layer.Layer<ExitServices>,
+) {
+  return launchHttpServer(createExitServer(configured, dependencies));
 }
 
 function post(server: { port?: number }, body: string): Promise<Response> {
@@ -150,7 +158,7 @@ describe("Exit Effect runtime", () => {
         return Effect.succeed(Response.json({ choices: [] }));
       },
     };
-    const server = createExitServer(config(sealed.privateKeys), services(provider));
+    const server = await startExitServer(config(sealed.privateKeys), services(provider));
     servers.push(server);
 
     const response = await post(server, sealed.body);
@@ -166,7 +174,7 @@ describe("Exit Effect runtime", () => {
     const replayProtection = Layer.succeed(ReplayProtection, {
       claim: () => Effect.die(new Error("private-key-canary")),
     });
-    const server = createExitServer(
+    const server = await startExitServer(
       config(sealed.privateKeys),
       services(provider(), replayProtection),
     );
@@ -184,7 +192,10 @@ describe("Exit Effect runtime", () => {
     const errorSpy = spyOn(console, "error");
     try {
       const sealed = await sealedRequest(Buffer.from("{ not valid json"));
-      const server = createExitServer(config(sealed.privateKeys), services(provider()));
+      const server = await startExitServer(
+        config(sealed.privateKeys),
+        services(provider()),
+      );
       servers.push(server);
 
       const response = await post(server, sealed.body);
@@ -209,7 +220,10 @@ describe("Exit Effect runtime", () => {
 
   test("seals a 409 for a replayed encrypted request", async () => {
     const sealed = await sealedRequest();
-    const server = createExitServer(config(sealed.privateKeys), services(provider()));
+    const server = await startExitServer(
+      config(sealed.privateKeys),
+      services(provider()),
+    );
     servers.push(server);
 
     const first = await post(server, sealed.body);
@@ -235,7 +249,10 @@ describe("Exit Effect runtime", () => {
 
   test("does not consume replay state when the HPKE envelope cannot be opened", async () => {
     const sealed = await sealedRequest();
-    const server = createExitServer(config(sealed.privateKeys), services(provider()));
+    const server = await startExitServer(
+      config(sealed.privateKeys),
+      services(provider()),
+    );
     servers.push(server);
 
     const tampered = {
@@ -254,7 +271,7 @@ describe("Exit Effect runtime", () => {
     const sealed = await sealedRequest(VALID_PAYLOAD, exitKeys);
     const other = await sealedRequest(VALID_PAYLOAD, exitKeys);
     const exhaust = replayProtectionLayer({ ttlMs: 60_000, maxEntries: 1 });
-    const server = createExitServer(
+    const server = await startExitServer(
       config(sealed.privateKeys),
       services(provider(), exhaust),
     );
@@ -283,7 +300,10 @@ describe("Exit Effect runtime", () => {
 
   test("rejects relay authentication failures with a plaintext 401", async () => {
     const sealed = await sealedRequest();
-    const server = createExitServer(config(sealed.privateKeys), services(provider()));
+    const server = await startExitServer(
+      config(sealed.privateKeys),
+      services(provider()),
+    );
     servers.push(server);
 
     const response = await fetch(`http://127.0.0.1:${server.port}/v1/chat/completions`, {
@@ -299,7 +319,7 @@ describe("Exit Effect runtime", () => {
   });
 
   test("rejects a malformed envelope with a plaintext 400", async () => {
-    const server = createExitServer(config(new Map()), services(provider()));
+    const server = await startExitServer(config(new Map()), services(provider()));
     servers.push(server);
 
     const response = await post(server, JSON.stringify({ not: "an envelope" }));
@@ -312,7 +332,10 @@ describe("Exit Effect runtime", () => {
 
   test("rejects an oversized envelope with a plaintext 413", async () => {
     const sealed = await sealedRequest();
-    const server = createExitServer(config(sealed.privateKeys), services(provider()));
+    const server = await startExitServer(
+      config(sealed.privateKeys),
+      services(provider()),
+    );
     servers.push(server);
 
     const response = await post(server, "x".repeat(5000));
@@ -327,7 +350,7 @@ describe("Exit Effect runtime", () => {
       policy: { allowedModels: new Set(["test-model"]), maxResponseBytes: 1024 },
       complete: () => Effect.fail(new ProviderTimeout()),
     };
-    const server = createExitServer(config(sealed.privateKeys), services(timedOut));
+    const server = await startExitServer(config(sealed.privateKeys), services(timedOut));
     servers.push(server);
 
     const response = await post(server, sealed.body);

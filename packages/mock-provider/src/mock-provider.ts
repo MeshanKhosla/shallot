@@ -4,13 +4,12 @@ import {
   formatBodyForDebug,
 } from "@shallot/observability";
 import {
-  bindRuntimeLifecycle,
   type DefectReporter,
   defectReporterLive,
   recoverDefect,
+  serveWebHandler,
 } from "@shallot/server-runtime";
-import type { Server } from "bun";
-import { Effect, type Layer, ManagedRuntime, Redacted } from "effect";
+import { Effect, type Layer, Redacted } from "effect";
 import type { MockProviderConfig } from "./config.ts";
 import {
   type MockProviderRequestError,
@@ -34,24 +33,21 @@ export function createMockProviderServer(
     readonly diagnostics?: Layer.Layer<DefectReporter>;
     readonly logger?: DebugLogger;
   } = {},
-): Server<undefined> {
+) {
   const logger = options.logger ?? createDebugLogger("provider");
-  const runtime = ManagedRuntime.make(options.diagnostics ?? defectReporterLive);
-  const server = Bun.serve({
-    port: config.port,
-    hostname: config.hostname,
-    idleTimeout: 60,
-    fetch(req) {
-      const program = handleMockProviderRequest(req, config, logger, hooks).pipe(
+  return serveWebHandler(
+    {
+      port: config.port,
+      hostname: config.hostname,
+      idleTimeout: 60,
+    },
+    (req) =>
+      handleMockProviderRequest(req, config, logger, hooks).pipe(
         Effect.catch((error) => Effect.succeed(providerErrorResponse(error))),
         Effect.catchCause(recoverDefect("mock-provider", providerDefectResponse)),
-      );
-      return runtime
-        .runPromise(program, { signal: req.signal })
-        .catch(providerDefectResponse);
-    },
-  });
-  return bindRuntimeLifecycle(server, runtime);
+        Effect.withSpan("provider.request"),
+      ),
+  ).pipe(Effect.provide(options.diagnostics ?? defectReporterLive));
 }
 
 export const handleMockProviderRequest = Effect.fnUntraced(function* (

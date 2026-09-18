@@ -12,13 +12,12 @@ import {
   type SealedRequest,
 } from "@shallot/protocol";
 import {
-  bindRuntimeLifecycle,
   type DefectReporter,
   defectReporterLive,
   recoverDefect,
+  serveWebHandler,
 } from "@shallot/server-runtime";
-import type { Server } from "bun";
-import { Effect, Layer, ManagedRuntime, Redacted } from "effect";
+import { Effect, Layer, Redacted } from "effect";
 import { ConcurrencyLimiter, concurrencyLimiterLayer } from "./concurrency-limiter.ts";
 import type { RelayConfig } from "./config.ts";
 import {
@@ -50,26 +49,22 @@ export function createRelayServer(
     readonly diagnostics?: Layer.Layer<DefectReporter>;
     readonly logger?: DebugLogger;
   } = {},
-): Server<undefined> {
+) {
   const logger = options.logger ?? createDebugLogger("relay");
-  const runtime = ManagedRuntime.make(
-    Layer.merge(services, options.diagnostics ?? defectReporterLive),
-  );
-  const server = Bun.serve({
-    port: config.port,
-    hostname: config.hostname,
-    idleTimeout: 60,
-    fetch(req) {
-      const program = handleRelayRequest(req, config, logger).pipe(
+  const dependencies = Layer.merge(services, options.diagnostics ?? defectReporterLive);
+  return serveWebHandler(
+    {
+      port: config.port,
+      hostname: config.hostname,
+      idleTimeout: 60,
+    },
+    (req) =>
+      handleRelayRequest(req, config, logger).pipe(
         Effect.catch((error) => Effect.succeed(relayErrorResponse(error))),
         Effect.catchCause(recoverDefect("relay", relayDefectResponse)),
-      );
-      return runtime
-        .runPromise(program, { signal: req.signal })
-        .catch(relayDefectResponse);
-    },
-  });
-  return bindRuntimeLifecycle(server, runtime);
+        Effect.withSpan("relay.request"),
+      ),
+  ).pipe(Effect.provide(dependencies));
 }
 
 export function relayLive(

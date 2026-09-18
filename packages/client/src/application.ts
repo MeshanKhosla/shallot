@@ -7,7 +7,7 @@ import { createSidecarServer, sidecarLive } from "./sidecar.ts";
 export const createSidecarApplication = Effect.gen(function* () {
   const config = yield* loadConfig;
   const debug = yield* debugLoggingEnabled;
-  return createSidecarServer(config, sidecarLive(config), {
+  return yield* createSidecarServer(config, sidecarLive(config), {
     logger: createDebugLogger("sidecar", { enabled: debug }),
   });
 });

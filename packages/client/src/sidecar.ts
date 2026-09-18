@@ -5,13 +5,12 @@ import {
 } from "@shallot/observability";
 import { PATHS, sealRequest } from "@shallot/protocol";
 import {
-  bindRuntimeLifecycle,
   type DefectReporter,
   defectReporterLive,
   recoverDefect,
+  serveWebHandler,
 } from "@shallot/server-runtime";
-import type { Server } from "bun";
-import { Effect, Layer, ManagedRuntime } from "effect";
+import { Effect, Layer } from "effect";
 import { readChatRequest } from "./chat-request.ts";
 import type { SidecarConfig } from "./config.ts";
 import {
@@ -34,26 +33,22 @@ export function createSidecarServer(
     readonly diagnostics?: Layer.Layer<DefectReporter>;
     readonly logger?: DebugLogger;
   } = {},
-): Server<undefined> {
+) {
   const logger = options.logger ?? createDebugLogger("sidecar");
-  const runtime = ManagedRuntime.make(
-    Layer.merge(services, options.diagnostics ?? defectReporterLive),
-  );
-  const server = Bun.serve({
-    port: config.port,
-    hostname: config.hostname,
-    idleTimeout: 60,
-    fetch(req) {
-      const program = handleSidecarRequest(req, config, logger).pipe(
+  const dependencies = Layer.merge(services, options.diagnostics ?? defectReporterLive);
+  return serveWebHandler(
+    {
+      port: config.port,
+      hostname: config.hostname,
+      idleTimeout: 60,
+    },
+    (req) =>
+      handleSidecarRequest(req, config, logger).pipe(
         Effect.catch((error) => Effect.succeed(sidecarErrorResponse(error))),
         Effect.catchCause(recoverDefect("sidecar", sidecarDefectResponse)),
-      );
-      return runtime
-        .runPromise(program, { signal: req.signal })
-        .catch(sidecarDefectResponse);
-    },
-  });
-  return bindRuntimeLifecycle(server, runtime);
+        Effect.withSpan("sidecar.request"),
+      ),
+  ).pipe(Effect.provide(dependencies));
 }
 
 export function sidecarLive(config: SidecarConfig): Layer.Layer<RelayClient> {

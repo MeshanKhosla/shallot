@@ -11,7 +11,7 @@ export const createExitApplication = Effect.gen(function* () {
   const providerConfig = yield* loadLlmProviderConfig;
   const debug = yield* debugLoggingEnabled;
   const provider = openAICompatibleProviderLive(providerConfig);
-  return createExitServer(config, exitLive(config, provider), {
+  return yield* createExitServer(config, exitLive(config, provider), {
     logger: createDebugLogger("exit", { enabled: debug }),
   });
 });

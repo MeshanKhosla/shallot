@@ -1,79 +1,44 @@
-import type { Server } from "bun";
-import { Effect } from "effect";
-
-export interface EffectServer extends Server<undefined> {
-  stop(closeActiveConnections?: boolean): Promise<void>;
-}
-
-export interface DisposableRuntime {
-  dispose(): Promise<void>;
-}
-
-export function bindRuntimeLifecycle(
-  server: Server<undefined>,
-  runtime: DisposableRuntime,
-): EffectServer {
-  const stopServer = server.stop.bind(server);
-  let shutdown: Promise<void> | undefined;
-
-  server.stop = (closeActiveConnections?: boolean) => {
-    // Reuse the first shutdown so Bun and the runtime are each stopped once.
-    shutdown ??= (async () => {
-      let stopFailure: unknown;
-      try {
-        await stopServer(closeActiveConnections);
-      } catch (error) {
-        stopFailure = error;
-      }
-
-      try {
-        await runtime.dispose();
-      } catch (disposeFailure) {
-        if (stopFailure !== undefined) {
-          throw new AggregateError(
-            [stopFailure, disposeFailure],
-            "Server stop and Effect runtime disposal failed",
-          );
-        }
-        throw disposeFailure;
-      }
-
-      if (stopFailure !== undefined) throw stopFailure;
-    })();
-    return shutdown;
-  };
-
-  return server;
-}
+import { BunRuntime } from "@effect/platform-bun";
+import { Console, Effect, Exit, Scope } from "effect";
+import type { RunningHttpServer } from "./http-server.ts";
 
 export function runServer<E>(
   component: string,
-  application: Effect.Effect<EffectServer, E>,
-): Promise<void> {
-  return Effect.runPromise(
-    Effect.scoped(
-      Effect.gen(function* () {
-        const server = yield* Effect.acquireRelease(application, (server: EffectServer) =>
-          Effect.promise(() => server.stop(true)),
-        );
-        yield* Effect.sync(() =>
-          console.log(
-            `shallot ${component} listening on http://${server.hostname}:${server.port}`,
-          ),
-        );
-        yield* waitForShutdownSignal;
-      }),
-    ),
-  );
+  application: Effect.Effect<RunningHttpServer, E, Scope.Scope>,
+): void {
+  Effect.scoped(
+    Effect.gen(function* () {
+      const server = yield* application;
+      yield* Console.log(
+        `shallot ${component} listening on http://${server.hostname}:${server.port}`,
+      );
+      return yield* Effect.never;
+    }),
+  ).pipe(BunRuntime.runMain);
 }
 
-const waitForShutdownSignal = Effect.callback<void>((resume) => {
-  const shutdown = () => resume(Effect.void);
-  process.once("SIGINT", shutdown);
-  process.once("SIGTERM", shutdown);
+export interface LaunchedHttpServer extends RunningHttpServer {
+  stop(): Promise<void>;
+}
 
-  return Effect.sync(() => {
-    process.off("SIGINT", shutdown);
-    process.off("SIGTERM", shutdown);
-  });
-});
+export async function launchHttpServer<E>(
+  application: Effect.Effect<RunningHttpServer, E, Scope.Scope>,
+): Promise<LaunchedHttpServer> {
+  const scope = await Effect.runPromise(Scope.make());
+  try {
+    const server = await Effect.runPromise(
+      application.pipe(Effect.provideService(Scope.Scope, scope)),
+    );
+    let close: Promise<void> | undefined;
+    return {
+      ...server,
+      stop() {
+        close ??= Effect.runPromise(Scope.close(scope, Exit.void));
+        return close;
+      },
+    };
+  } catch (error) {
+    await Effect.runPromise(Scope.close(scope, Exit.void));
+    throw error;
+  }
+}

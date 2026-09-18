@@ -7,7 +7,7 @@ import { createMockProviderServer } from "./mock-provider.ts";
 export const createMockProviderApplication = Effect.gen(function* () {
   const config = yield* loadConfig;
   const debug = yield* debugLoggingEnabled;
-  return createMockProviderServer(
+  return yield* createMockProviderServer(
     config,
     {},
     {

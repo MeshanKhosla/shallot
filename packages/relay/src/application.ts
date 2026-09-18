@@ -7,7 +7,7 @@ import { createRelayServer, relayLive } from "./relay.ts";
 export const createRelayApplication = Effect.gen(function* () {
   const config = yield* loadConfig;
   const debug = yield* debugLoggingEnabled;
-  return createRelayServer(config, relayLive(config), {
+  return yield* createRelayServer(config, relayLive(config), {
     logger: createDebugLogger("relay", { enabled: debug }),
   });
 });

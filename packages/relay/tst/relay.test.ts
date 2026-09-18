@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { generateKeyPairSync } from "node:crypto";
 import { sealRequest } from "@shallot/protocol";
+import { launchHttpServer } from "@shallot/server-runtime";
 import { Layer, Redacted } from "effect";
 import { concurrencyLimiterLayer } from "../src/concurrency-limiter.ts";
 import type { RelayConfig } from "../src/config.ts";
@@ -69,7 +70,7 @@ function services(config: RelayConfig, exitFetch: RelayFetch) {
 
 function serverWith(exitFetch: RelayFetch) {
   const configured = config();
-  return createRelayServer(configured, services(configured, exitFetch));
+  return launchHttpServer(createRelayServer(configured, services(configured, exitFetch)));
 }
 
 function post(server: { port?: number }, body: string): Promise<Response> {
@@ -86,7 +87,7 @@ function post(server: { port?: number }, body: string): Promise<Response> {
 
 describe("Relay Effect runtime", () => {
   test("uses a replacement service Layer and releases concurrency", async () => {
-    const server = serverWith(async () => new Response("frame\n"));
+    const server = await serverWith(async () => new Response("frame\n"));
     servers.push(server);
 
     const first = await post(server, await envelope("request-one"));
@@ -99,7 +100,7 @@ describe("Relay Effect runtime", () => {
 
   test("releases concurrency after an upstream failure", async () => {
     let calls = 0;
-    const server = serverWith(async () => {
+    const server = await serverWith(async () => {
       calls += 1;
       if (calls === 1) throw new Error("exit unavailable");
       return new Response("frame\n");
@@ -117,7 +118,7 @@ describe("Relay Effect runtime", () => {
   test("enforces concurrency and releases it when the consumer stops", async () => {
     let calls = 0;
     let upstreamCancelled = false;
-    const server = serverWith(async () => {
+    const server = await serverWith(async () => {
       calls += 1;
       if (calls > 1) return new Response("frame\n");
       return new Response(
@@ -147,7 +148,7 @@ describe("Relay Effect runtime", () => {
 
   test("releases concurrency when the upstream body cannot be read", async () => {
     let calls = 0;
-    const server = serverWith(async () => {
+    const server = await serverWith(async () => {
       calls += 1;
       if (calls > 1) return new Response("frame\n");
       const response = new Response("frame\n");

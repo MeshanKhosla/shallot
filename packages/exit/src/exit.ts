@@ -13,13 +13,12 @@ import {
   type SealedRequest,
 } from "@shallot/protocol";
 import {
-  bindRuntimeLifecycle,
   type DefectReporter,
   defectReporterLive,
   recoverDefect,
+  serveWebHandler,
 } from "@shallot/server-runtime";
-import type { Server } from "bun";
-import { Effect, Layer, ManagedRuntime, type Redacted } from "effect";
+import { Effect, Layer, type Redacted } from "effect";
 import type { ExitConfig } from "./config.ts";
 import {
   ExitAuthenticationError,
@@ -47,26 +46,22 @@ export function createExitServer(
     readonly diagnostics?: Layer.Layer<DefectReporter>;
     readonly logger?: DebugLogger;
   } = {},
-): Server<undefined> {
+) {
   const logger = options.logger ?? createDebugLogger("exit");
-  const runtime = ManagedRuntime.make(
-    Layer.merge(services, options.diagnostics ?? defectReporterLive),
-  );
-  const server = Bun.serve({
-    port: config.port,
-    hostname: config.hostname,
-    idleTimeout: 60,
-    fetch(req) {
-      const program = handleExitRequest(req, config, logger).pipe(
+  const dependencies = Layer.merge(services, options.diagnostics ?? defectReporterLive);
+  return serveWebHandler(
+    {
+      port: config.port,
+      hostname: config.hostname,
+      idleTimeout: 60,
+    },
+    (req) =>
+      handleExitRequest(req, config, logger).pipe(
         Effect.catch((error) => Effect.succeed(exitErrorResponse(error))),
         Effect.catchCause(recoverDefect("exit", exitDefectResponse)),
-      );
-      return runtime
-        .runPromise(program, { signal: req.signal })
-        .catch(exitDefectResponse);
-    },
-  });
-  return bindRuntimeLifecycle(server, runtime);
+        Effect.withSpan("exit.request"),
+      ),
+  ).pipe(Effect.provide(dependencies));
 }
 
 export function exitLive(

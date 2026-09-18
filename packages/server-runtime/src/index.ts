@@ -15,8 +15,12 @@ export {
   recoverDefect,
 } from "./defects.ts";
 export {
-  bindRuntimeLifecycle,
-  type DisposableRuntime,
-  type EffectServer,
+  type LaunchedHttpServer,
+  launchHttpServer,
   runServer,
 } from "./lifecycle.ts";
+export {
+  type HttpServerConfig,
+  type RunningHttpServer,
+  serveWebHandler,
+} from "./http-server.ts";

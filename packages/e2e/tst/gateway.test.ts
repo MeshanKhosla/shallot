@@ -13,6 +13,7 @@ import {
   relayLive,
   relayObserverLayer,
 } from "@shallot/relay";
+import { launchHttpServer } from "@shallot/server-runtime";
 import { generateText, Output, stepCountIs, streamText, tool } from "ai";
 import { Redacted } from "effect";
 import { z } from "zod";
@@ -39,7 +40,7 @@ afterEach(async () => {
   );
 });
 
-function setupGateway(options: { providerChunkDelayMs?: number } = {}) {
+async function setupGateway(options: { providerChunkDelayMs?: number } = {}) {
   const relayObservations: RelayObservation[] = [];
   const relayResponseChunks: Uint8Array[] = [];
   const providerObservations: ProviderObservation[] = [];
@@ -53,20 +54,22 @@ function setupGateway(options: { providerChunkDelayMs?: number } = {}) {
   });
   const exitKeys = generateKeyPairSync("x25519");
 
-  const provider = createMockProviderServer(
-    {
-      hostname: "127.0.0.1",
-      port: 0,
-      expectedApiKey: Redacted.make(PROVIDER_TOKEN),
-      chunkDelayMs: options.providerChunkDelayMs ?? 1,
-    },
-    {
-      observe: (observation) => {
-        providerObservations.push(observation);
-        resolveProviderRequest?.();
+  const provider = await launchHttpServer(
+    createMockProviderServer(
+      {
+        hostname: "127.0.0.1",
+        port: 0,
+        expectedApiKey: Redacted.make(PROVIDER_TOKEN),
+        chunkDelayMs: options.providerChunkDelayMs ?? 1,
       },
-      observeCancellation: () => resolveProviderCancellation?.(),
-    },
+      {
+        observe: (observation) => {
+          providerObservations.push(observation);
+          resolveProviderRequest?.();
+        },
+        observeCancellation: () => resolveProviderCancellation?.(),
+      },
+    ),
   );
   servers.push(provider);
 
@@ -96,7 +99,9 @@ function setupGateway(options: { providerChunkDelayMs?: number } = {}) {
       maxResponseBytes: 256 * 1024,
     },
   });
-  const exit = createExitServer(exitConfig, exitLive(exitConfig, providerLayer));
+  const exit = await launchHttpServer(
+    createExitServer(exitConfig, exitLive(exitConfig, providerLayer)),
+  );
   servers.push(exit);
 
   const relayConfig = {
@@ -112,31 +117,35 @@ function setupGateway(options: { providerChunkDelayMs?: number } = {}) {
     maxConcurrentRequests: 10,
     exitTimeoutMs: 1_000,
   };
-  const relay = createRelayServer(
-    relayConfig,
-    relayLive(
+  const relay = await launchHttpServer(
+    createRelayServer(
       relayConfig,
-      relayObserverLayer({
-        observeRequest: (observation) => relayObservations.push(observation),
-        observeResponseChunk: (chunk) => relayResponseChunks.push(chunk.slice()),
-      }),
+      relayLive(
+        relayConfig,
+        relayObserverLayer({
+          observeRequest: (observation) => relayObservations.push(observation),
+          observeResponseChunk: (chunk) => relayResponseChunks.push(chunk.slice()),
+        }),
+      ),
     ),
   );
   servers.push(relay);
 
-  const sidecar = createSidecarServer({
-    hostname: "127.0.0.1",
-    port: 0,
-    relayUrl: new URL(`http://127.0.0.1:${relay.port}/v1/chat/completions`),
-    exitPublicKey: exitKeys.publicKey,
-    exitKeyId: "test-key",
-    requestPaddingBytes: 1024,
-    maxRequestBytes: 64 * 1024,
-    relayTimeoutMs: 1_000,
-    maxResponseLineBytes: 64 * 1024,
-    maxResponseFrames: 100,
-    maxResponseBytes: 256 * 1024,
-  });
+  const sidecar = await launchHttpServer(
+    createSidecarServer({
+      hostname: "127.0.0.1",
+      port: 0,
+      relayUrl: new URL(`http://127.0.0.1:${relay.port}/v1/chat/completions`),
+      exitPublicKey: exitKeys.publicKey,
+      exitKeyId: "test-key",
+      requestPaddingBytes: 1024,
+      maxRequestBytes: 64 * 1024,
+      relayTimeoutMs: 1_000,
+      maxResponseLineBytes: 64 * 1024,
+      maxResponseFrames: 100,
+      maxResponseBytes: 256 * 1024,
+    }),
+  );
   servers.push(sidecar);
 
   const shallot = createOpenAICompatible({
@@ -162,7 +171,7 @@ function setupGateway(options: { providerChunkDelayMs?: number } = {}) {
 
 describe("AI SDK through Shallot", () => {
   test("generates text without exposing identity and content together", async () => {
-    const gateway = setupGateway();
+    const gateway = await setupGateway();
     const prompt = "prompt-canary: return the configured response";
 
     const result = await generateText({
@@ -193,7 +202,7 @@ describe("AI SDK through Shallot", () => {
   });
 
   test("streams text through encrypted padded frames", async () => {
-    const gateway = setupGateway();
+    const gateway = await setupGateway();
     const result = streamText({
       model: gateway.shallot.chatModel("mock-stream"),
       prompt: "stream the deterministic response",
@@ -208,7 +217,7 @@ describe("AI SDK through Shallot", () => {
   });
 
   test("cancels the provider when the AI SDK client disconnects", async () => {
-    const gateway = setupGateway({ providerChunkDelayMs: 1_000 });
+    const gateway = await setupGateway({ providerChunkDelayMs: 1_000 });
     const cancellation = new AbortController();
     const result = streamText({
       model: gateway.shallot.chatModel("mock-stream"),
@@ -234,7 +243,7 @@ describe("AI SDK through Shallot", () => {
   });
 
   test("supports an AI SDK tool round trip", async () => {
-    const gateway = setupGateway();
+    const gateway = await setupGateway();
     const result = await generateText({
       model: gateway.shallot.chatModel("mock-tool"),
       prompt: "What is the weather in Paris?",
@@ -256,7 +265,7 @@ describe("AI SDK through Shallot", () => {
   });
 
   test("supports structured output", async () => {
-    const gateway = setupGateway();
+    const gateway = await setupGateway();
     const result = await generateText({
       model: gateway.shallot.chatModel("mock-json"),
       prompt: "Return structured output",
@@ -269,7 +278,7 @@ describe("AI SDK through Shallot", () => {
   });
 
   test("returns encrypted provider errors to the AI SDK", async () => {
-    const gateway = setupGateway();
+    const gateway = await setupGateway();
     const operation = generateText({
       model: gateway.shallot.chatModel("mock-error"),
       prompt: "trigger the configured provider error",
@@ -285,7 +294,7 @@ describe("AI SDK through Shallot", () => {
   });
 
   test("rejects an invalid tenant token before the Exit", async () => {
-    const gateway = setupGateway();
+    const gateway = await setupGateway();
     const response = await fetch(gateway.sidecarUrl, {
       method: "POST",
       headers: {
@@ -304,7 +313,7 @@ describe("AI SDK through Shallot", () => {
   });
 
   test("rejects replayed envelopes at the Relay and Exit", async () => {
-    const gateway = setupGateway();
+    const gateway = await setupGateway();
     await generateText({
       model: gateway.shallot.chatModel("mock-text"),
       prompt: "create one envelope",

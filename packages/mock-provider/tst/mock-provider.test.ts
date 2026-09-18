@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { launchHttpServer } from "@shallot/server-runtime";
 import { createMockProviderServer } from "../src/mock-provider.ts";
 
 const servers: Array<{
@@ -11,17 +12,19 @@ afterEach(async () => {
 
 describe("Mock provider Effect runtime", () => {
   test("converts an observation defect without leaking it", async () => {
-    const server = createMockProviderServer(
-      {
-        hostname: "127.0.0.1",
-        port: 0,
-        chunkDelayMs: 0,
-      },
-      {
-        observe() {
-          throw new Error("provider-key-canary");
+    const server = await launchHttpServer(
+      createMockProviderServer(
+        {
+          hostname: "127.0.0.1",
+          port: 0,
+          chunkDelayMs: 0,
         },
-      },
+        {
+          observe() {
+            throw new Error("provider-key-canary");
+          },
+        },
+      ),
     );
     servers.push(server);
 
