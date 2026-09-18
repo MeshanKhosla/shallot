@@ -54,13 +54,17 @@ export function createDebugLogger(
     enabled,
     debug(event, view) {
       if (!enabled) return;
-      sink({
-        timestamp: new Date().toISOString(),
-        level: "debug",
-        component,
-        event,
-        view,
-      });
+      try {
+        sink({
+          timestamp: new Date().toISOString(),
+          level: "debug",
+          component,
+          event,
+          view,
+        });
+      } catch {
+        // Debug output must not alter request processing.
+      }
     },
   };
 }

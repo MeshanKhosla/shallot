@@ -25,7 +25,7 @@ afterEach(() => {
 });
 
 describe("Mock provider config", () => {
-  test("regects a negative integer", () => {
+  test("rejects a negative integer", () => {
     process.env.MOCK_PROVIDER_PORT = "-1";
     expect(() => loadConfig()).toThrow(
       "MOCK_PROVIDER_PORT must be a non-negative integer",

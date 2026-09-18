@@ -41,58 +41,81 @@ export function createMockProviderServer(
   return bindRuntimeLifecycle(server, runtime);
 }
 
-export const handleMockProviderRequest = Effect.fn("handleMockProviderRequest")(
-  function* (
-    req: Request,
-    config: MockProviderConfig,
-    logger = createDebugLogger("provider"),
-    hooks: MockProviderHooks = {},
-  ): Effect.fn.Return<Response, MockProviderRequestError> {
-    const url = new URL(req.url);
-    if (req.method !== "POST" || url.pathname !== "/v1/chat/completions") {
-      return yield* new ProviderRouteNotFound();
-    }
-    if (
-      config.expectedApiKey &&
-      req.headers.get("authorization") !== `Bearer ${config.expectedApiKey}`
-    ) {
-      return yield* new ProviderAuthenticationError();
-    }
+export const handleMockProviderRequest = Effect.fnUntraced(function* (
+  req: Request,
+  config: MockProviderConfig,
+  logger = createDebugLogger("provider"),
+  hooks: MockProviderHooks = {},
+): Effect.fn.Return<Response, MockProviderRequestError> {
+  const url = new URL(req.url);
+  if (req.method !== "POST" || url.pathname !== "/v1/chat/completions") {
+    return yield* new ProviderRouteNotFound();
+  }
+  if (
+    config.expectedApiKey &&
+    req.headers.get("authorization") !== `Bearer ${config.expectedApiKey}`
+  ) {
+    return yield* new ProviderAuthenticationError();
+  }
 
-    const request = yield* Effect.tryPromise({
-      try: async () => parseChatRequest(await req.json()),
-      catch: () => new ProviderInvalidRequest(),
-    });
-    yield* Effect.sync(() => {
-      hooks.observe?.({
-        authorization: req.headers.get("authorization"),
-        request,
-      });
-      logger.debug("request.received", {
-        tenantId: "unknown",
-        request,
-      });
-    });
-
-    const response = createOpenAIResponse(
+  const request = yield* Effect.tryPromise({
+    try: async () => parseChatRequest(await req.json()),
+    catch: () => new ProviderInvalidRequest(),
+  });
+  yield* Effect.sync(() => {
+    hooks.observe?.({
+      authorization: req.headers.get("authorization"),
       request,
-      config.chunkDelayMs,
-      hooks.observeCancellation,
-    );
-    if (logger.enabled) {
-      yield* Effect.sync(() => {
-        void response
-          .clone()
-          .text()
-          .then((body) => {
-            logger.debug("response.sent", {
-              tenantId: "unknown",
-              status: response.status,
-              body: formatBodyForDebug(body),
-            });
-          });
-      });
-    }
+    });
+    logger.debug("request.received", {
+      tenantId: "unknown",
+      request,
+    });
+  });
+
+  const response = createOpenAIResponse(
+    request,
+    config.chunkDelayMs,
+    hooks.observeCancellation,
+  );
+  return logger.enabled ? withDebugResponseLogging(response, logger) : response;
+});
+
+function withDebugResponseLogging(
+  response: Response,
+  logger: ReturnType<typeof createDebugLogger>,
+): Response {
+  if (!response.body) {
+    logger.debug("response.sent", {
+      tenantId: "unknown",
+      status: response.status,
+      body: "",
+    });
     return response;
-  },
-);
+  }
+
+  const decoder = new TextDecoder();
+  let body = "";
+  const stream = response.body.pipeThrough(
+    new TransformStream<Uint8Array, Uint8Array>({
+      transform(chunk, controller) {
+        body += decoder.decode(chunk, { stream: true });
+        controller.enqueue(chunk);
+      },
+      flush() {
+        body += decoder.decode();
+        logger.debug("response.sent", {
+          tenantId: "unknown",
+          status: response.status,
+          body: formatBodyForDebug(body),
+        });
+      },
+    }),
+  );
+
+  return new Response(stream, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: response.headers,
+  });
+}

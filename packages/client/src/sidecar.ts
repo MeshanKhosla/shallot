@@ -48,7 +48,7 @@ export function sidecarLive(config: SidecarConfig): Layer.Layer<RelayClient> {
   }).pipe(Layer.provide(relayTransportLive));
 }
 
-export const handleSidecarRequest = Effect.fn("handleSidecarRequest")(function* (
+export const handleSidecarRequest = Effect.fnUntraced(function* (
   req: Request,
   config: SidecarConfig,
   logger = createDebugLogger("sidecar"),

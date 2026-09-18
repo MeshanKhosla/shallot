@@ -43,6 +43,17 @@ describe("debug logger", () => {
     expect(called).toBeFalse();
   });
 
+  test("does not let a failed sink alter request processing", () => {
+    const logger = createDebugLogger("relay", {
+      enabled: true,
+      sink: () => {
+        throw new Error("output closed");
+      },
+    });
+
+    expect(() => logger.debug("request.received", {})).not.toThrow();
+  });
+
   test("formats terminal output with a readable header and indented view", () => {
     const output = formatDebugEntry({
       timestamp: "2026-09-16T19:25:45.851Z",
