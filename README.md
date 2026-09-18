@@ -74,6 +74,23 @@ Open Run and Debug, select `Attach: Local Shallot stack`, and press F5. The
 compound configuration attaches to Provider, Exit, Relay, and Sidecar. Set
 breakpoints before sending a request to `http://127.0.0.1:8788/v1`.
 
+Send a request through the stack from another terminal:
+
+```sh
+curl http://127.0.0.1:8788/v1/chat/completions \
+  -H "Authorization: Bearer tenant-local" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "mock-text",
+    "messages": [
+      {
+        "role": "user",
+        "content": "Hello from the Sidecar"
+      }
+    ]
+  }'
+```
+
 Effect Dev Tools shows the paused fiber's Context, span stack, and sibling
 fibers, but the Bun debugger controls execution. Use Continue to move between
 breakpoints in different services. Step Over cannot cross an HTTP request
