@@ -14,12 +14,12 @@ import {
 } from "@shallot/protocol";
 import {
   bindRuntimeLifecycle,
-  DefectReporter,
+  type DefectReporter,
   defectReporterLive,
   recoverDefect,
 } from "@shallot/server-runtime";
 import type { Server } from "bun";
-import { Effect, Layer, ManagedRuntime, Redacted } from "effect";
+import { Effect, Layer, ManagedRuntime, type Redacted } from "effect";
 import type { ExitConfig } from "./config.ts";
 import {
   ExitAuthenticationError,

@@ -1,3 +1,5 @@
+import { createDebugLogger } from "@shallot/observability";
+import { debugLoggingEnabled } from "@shallot/server-runtime";
 import { Effect } from "effect";
 import { loadConfig } from "./config.ts";
 import { createExitServer, exitLive } from "./exit.ts";
@@ -13,5 +15,3 @@ export const createExitApplication = Effect.gen(function* () {
     logger: createDebugLogger("exit", { enabled: debug }),
   });
 });
-import { createDebugLogger } from "@shallot/observability";
-import { debugLoggingEnabled } from "@shallot/server-runtime";

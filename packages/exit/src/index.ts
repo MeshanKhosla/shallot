@@ -1,5 +1,5 @@
 export { createExitApplication } from "./application.ts";
-export { type ExitConfig, loadConfig } from "./config.ts";
+export { type ExitConfig, ExitConfigError, loadConfig } from "./config.ts";
 export { createExitServer, type ExitServices, exitLive } from "./exit.ts";
 export { loadLlmProviderConfig } from "./llm-config.ts";
 export {

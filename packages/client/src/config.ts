@@ -1,6 +1,10 @@
 import { parseX25519PublicKey } from "@shallot/protocol";
 import { positiveInteger } from "@shallot/server-runtime";
-import { Config, Effect } from "effect";
+import { Config, Data, Effect } from "effect";
+
+export class SidecarConfigError extends Data.TaggedError("SidecarConfigError")<{
+  readonly message: string;
+}> {}
 
 export interface SidecarConfig {
   hostname: string;
@@ -18,6 +22,13 @@ export interface SidecarConfig {
 
 export const loadConfig = Effect.gen(function* () {
   const publicKey = yield* Config.NonEmptyString("SIDECAR_EXIT_PUBLIC_KEY");
+  const exitPublicKey = yield* Effect.try({
+    try: () => parseX25519PublicKey(publicKey),
+    catch: () =>
+      new SidecarConfigError({
+        message: "SIDECAR_EXIT_PUBLIC_KEY must be a valid X25519 public key",
+      }),
+  });
   return {
     hostname: yield* Config.String("SIDECAR_HOSTNAME").pipe(
       Config.withDefault("127.0.0.1"),
@@ -26,7 +37,7 @@ export const loadConfig = Effect.gen(function* () {
     relayUrl: yield* Config.URL("SIDECAR_RELAY_URL").pipe(
       Config.withDefault(new URL("http://127.0.0.1:8787/v1/chat/completions")),
     ),
-    exitPublicKey: parseX25519PublicKey(publicKey),
+    exitPublicKey,
     exitKeyId: yield* Config.String("SIDECAR_EXIT_KEY_ID").pipe(
       Config.withDefault("local"),
     ),

@@ -74,6 +74,12 @@ describe("Exit config", () => {
     expect(runExitConfig).toThrow();
   });
 
+  test("rejects an invalid private key as a config error", () => {
+    process.env.EXIT_PRIVATE_KEY = "not-a-key";
+    process.env.EXIT_RELAY_TOKEN = "relay-token";
+    expect(runExitConfig).toThrow("EXIT_PRIVATE_KEY must be a valid X25519 private key");
+  });
+
   test("loads a full configuration", () => {
     process.env.EXIT_PRIVATE_KEY = privateKeyPem();
     process.env.EXIT_RELAY_TOKEN = "relay-token";
@@ -128,7 +134,8 @@ describe("LLM provider config", () => {
     const config = runProviderConfig();
 
     expect(config.url).toEqual(new URL("https://provider.example/v1/chat/completions"));
-    expect(Redacted.value(config.apiKey!)).toBe("provider-token");
+    if (config.apiKey === undefined) throw new Error("expected a provider API key");
+    expect(Redacted.value(config.apiKey)).toBe("provider-token");
     expect(config.timeoutMs).toBe(60_000);
     expect(config.policy.allowedModels).toEqual(new Set(["model-one", "model-two"]));
     expect(config.policy.maxResponseBytes).toBe(16 * 1024 * 1024);

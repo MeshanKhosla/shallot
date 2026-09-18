@@ -1,6 +1,6 @@
-import type { OpenAICompatibleProviderConfig } from "./openai-compatible-provider.ts";
 import { positiveInteger } from "@shallot/server-runtime";
 import { Config, Effect, Option } from "effect";
+import type { OpenAICompatibleProviderConfig } from "./openai-compatible-provider.ts";
 
 export const loadLlmProviderConfig = Effect.gen(function* () {
   const apiKey = yield* Config.Redacted("LLM_PROVIDER_API_KEY").pipe(Config.option);

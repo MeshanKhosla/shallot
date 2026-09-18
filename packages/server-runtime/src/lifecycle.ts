@@ -53,9 +53,8 @@ export function runServer<E>(
   return Effect.runPromise(
     Effect.scoped(
       Effect.gen(function* () {
-        const server = yield* Effect.acquireRelease(
-          application,
-          (server: EffectServer) => Effect.promise(() => server.stop(true)),
+        const server = yield* Effect.acquireRelease(application, (server: EffectServer) =>
+          Effect.promise(() => server.stop(true)),
         );
         yield* Effect.sync(() =>
           console.log(

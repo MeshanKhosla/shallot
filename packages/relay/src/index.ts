@@ -1,3 +1,4 @@
+export { createRelayApplication } from "./application.ts";
 export { loadConfig, type RelayConfig } from "./config.ts";
 export {
   createRelayServer,
@@ -23,4 +24,3 @@ export {
   type TenantIdentity,
   tenantAuthenticatorLayer,
 } from "./tenant-auth.ts";
-export { createRelayApplication } from "./application.ts";

@@ -60,6 +60,13 @@ describe("Sidecar config", () => {
     expect(runConfig).toThrow();
   });
 
+  test("rejects an invalid exit public key as a config error", () => {
+    process.env.SIDECAR_EXIT_PUBLIC_KEY = "not-a-key";
+    expect(runConfig).toThrow(
+      "SIDECAR_EXIT_PUBLIC_KEY must be a valid X25519 public key",
+    );
+  });
+
   test("loads a full configuration", () => {
     process.env.SIDECAR_EXIT_PUBLIC_KEY = publicKeyPem();
     process.env.SIDECAR_RELAY_URL = "https://relay.internal/v1/chat/completions";

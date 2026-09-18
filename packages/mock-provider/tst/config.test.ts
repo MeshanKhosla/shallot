@@ -51,7 +51,8 @@ describe("Mock provider config", () => {
 
     expect(config.hostname).toBe("provider.internal");
     expect(config.port).toBe(9200);
-    expect(Redacted.value(config.expectedApiKey!)).toBe("api-key");
+    if (config.expectedApiKey === undefined) throw new Error("expected an API key");
+    expect(Redacted.value(config.expectedApiKey)).toBe("api-key");
     expect(config.chunkDelayMs).toBe(15);
   });
 

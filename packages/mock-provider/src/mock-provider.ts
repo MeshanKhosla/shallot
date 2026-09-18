@@ -5,12 +5,12 @@ import {
 } from "@shallot/observability";
 import {
   bindRuntimeLifecycle,
-  DefectReporter,
+  type DefectReporter,
   defectReporterLive,
   recoverDefect,
 } from "@shallot/server-runtime";
 import type { Server } from "bun";
-import { Effect, Layer, ManagedRuntime, Redacted } from "effect";
+import { Effect, type Layer, ManagedRuntime, Redacted } from "effect";
 import type { MockProviderConfig } from "./config.ts";
 import {
   type MockProviderRequestError,

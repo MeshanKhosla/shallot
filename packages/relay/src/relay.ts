@@ -13,7 +13,7 @@ import {
 } from "@shallot/protocol";
 import {
   bindRuntimeLifecycle,
-  DefectReporter,
+  type DefectReporter,
   defectReporterLive,
   recoverDefect,
 } from "@shallot/server-runtime";

@@ -1,3 +1,6 @@
+import { nonNegativeInteger } from "@shallot/server-runtime";
+import { Config, Effect, Option, type Redacted } from "effect";
+
 export interface ProviderObservation {
   authorization: string | null;
   request: Record<string, unknown>;
@@ -23,5 +26,3 @@ export const loadConfig = Effect.gen(function* () {
     chunkDelayMs: yield* nonNegativeInteger("MOCK_PROVIDER_CHUNK_DELAY_MS", 1),
   } satisfies MockProviderConfig;
 });
-import { nonNegativeInteger } from "@shallot/server-runtime";
-import { Config, Effect, Option, type Redacted } from "effect";
