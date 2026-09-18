@@ -1,33 +1,17 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { generateKeyPairSync } from "node:crypto";
 import { ConfigProvider, Effect } from "effect";
 import { loadConfig } from "../src/config.ts";
 
-const runConfig = () =>
+const runConfig = (env: Record<string, string> = {}) =>
   Effect.runSync(
     loadConfig.pipe(
       Effect.provideService(
         ConfigProvider.ConfigProvider,
-        ConfigProvider.fromUnknown(process.env),
+        ConfigProvider.fromUnknown(env),
       ),
     ),
   );
-
-const SIDECAR_ENV = [
-  "SIDECAR_EXIT_PUBLIC_KEY",
-  "SIDECAR_RELAY_URL",
-  "SIDECAR_HOSTNAME",
-  "SIDECAR_PORT",
-  "SIDECAR_EXIT_KEY_ID",
-  "SIDECAR_REQUEST_PADDING_BYTES",
-  "SIDECAR_MAX_REQUEST_BYTES",
-  "SIDECAR_RELAY_TIMEOUT_MS",
-  "SIDECAR_MAX_RESPONSE_LINE_BYTES",
-  "SIDECAR_MAX_RESPONSE_FRAMES",
-  "SIDECAR_MAX_RESPONSE_BYTES",
-] as const;
-
-const original: Record<string, string | undefined> = {};
 
 function publicKeyPem(): string {
   return generateKeyPairSync("x25519")
@@ -35,47 +19,32 @@ function publicKeyPem(): string {
     .toString();
 }
 
-beforeEach(() => {
-  for (const name of SIDECAR_ENV) {
-    original[name] = process.env[name];
-    delete process.env[name];
-  }
-});
-
-afterEach(() => {
-  for (const name of SIDECAR_ENV) {
-    if (original[name] === undefined) delete process.env[name];
-    else process.env[name] = original[name];
-  }
-});
-
 describe("Sidecar config", () => {
   test("requires an exit public key", () => {
     expect(runConfig).toThrow("SIDECAR_EXIT_PUBLIC_KEY");
   });
 
   test("rejects an invalid port", () => {
-    process.env.SIDECAR_EXIT_PUBLIC_KEY = publicKeyPem();
-    process.env.SIDECAR_PORT = "-2";
-    expect(runConfig).toThrow();
+    expect(() =>
+      runConfig({ SIDECAR_EXIT_PUBLIC_KEY: publicKeyPem(), SIDECAR_PORT: "-2" }),
+    ).toThrow();
   });
 
   test("rejects an invalid exit public key as a config error", () => {
-    process.env.SIDECAR_EXIT_PUBLIC_KEY = "not-a-key";
-    expect(runConfig).toThrow(
+    expect(() => runConfig({ SIDECAR_EXIT_PUBLIC_KEY: "not-a-key" })).toThrow(
       "SIDECAR_EXIT_PUBLIC_KEY must be a valid X25519 public key",
     );
   });
 
   test("loads a full configuration", () => {
-    process.env.SIDECAR_EXIT_PUBLIC_KEY = publicKeyPem();
-    process.env.SIDECAR_RELAY_URL = "https://relay.internal/v1/chat/completions";
-    process.env.SIDECAR_HOSTNAME = "127.0.0.9";
-    process.env.SIDECAR_PORT = "9100";
-    process.env.SIDECAR_EXIT_KEY_ID = "rotated";
-    process.env.SIDECAR_MAX_RESPONSE_FRAMES = "42";
-
-    const config = runConfig();
+    const config = runConfig({
+      SIDECAR_EXIT_PUBLIC_KEY: publicKeyPem(),
+      SIDECAR_RELAY_URL: "https://relay.internal/v1/chat/completions",
+      SIDECAR_HOSTNAME: "127.0.0.9",
+      SIDECAR_PORT: "9100",
+      SIDECAR_EXIT_KEY_ID: "rotated",
+      SIDECAR_MAX_RESPONSE_FRAMES: "42",
+    });
 
     expect(config.hostname).toBe("127.0.0.9");
     expect(config.port).toBe(9100);
@@ -88,9 +57,7 @@ describe("Sidecar config", () => {
   });
 
   test("parses a PEM exit public key and applies defaults", () => {
-    process.env.SIDECAR_EXIT_PUBLIC_KEY = publicKeyPem();
-
-    const config = runConfig();
+    const config = runConfig({ SIDECAR_EXIT_PUBLIC_KEY: publicKeyPem() });
 
     expect(config.exitKeyId).toBe("local");
     expect(config.port).toBe(8788);

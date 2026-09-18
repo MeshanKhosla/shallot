@@ -1,40 +1,26 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { generateKeyPairSync } from "node:crypto";
 import { ConfigProvider, Effect, Redacted } from "effect";
 import { loadConfig } from "../src/config.ts";
 import { loadLlmProviderConfig } from "../src/llm-config.ts";
 
-const runConfig = <A, E>(config: Effect.Effect<A, E>) =>
-  Effect.runSync(
+function runConfig<A, E>(
+  config: Effect.Effect<A, E>,
+  env: Record<string, string> = {},
+): A {
+  return Effect.runSync(
     config.pipe(
       Effect.provideService(
         ConfigProvider.ConfigProvider,
-        ConfigProvider.fromUnknown(process.env),
+        ConfigProvider.fromUnknown(env),
       ),
     ),
   );
-const runExitConfig = () => runConfig(loadConfig);
-const runProviderConfig = () => runConfig(loadLlmProviderConfig);
+}
 
-const EXIT_ENV = [
-  "EXIT_PRIVATE_KEY",
-  "EXIT_RELAY_TOKEN",
-  "EXIT_HOSTNAME",
-  "EXIT_PORT",
-  "EXIT_KEY_ID",
-  "EXIT_MAX_ENVELOPE_BYTES",
-  "EXIT_RESPONSE_PADDING_BYTES",
-  "EXIT_RESPONSE_FLUSH_MS",
-  "EXIT_REPLAY_TTL_MS",
-  "EXIT_REPLAY_MAX_ENTRIES",
-  "LLM_PROVIDER_URL",
-  "LLM_PROVIDER_API_KEY",
-  "LLM_PROVIDER_TIMEOUT_MS",
-  "LLM_ALLOWED_MODELS",
-  "LLM_MAX_RESPONSE_BYTES",
-] as const;
-
-const original: Record<string, string | undefined> = {};
+const runExitConfig = (env: Record<string, string> = {}) => runConfig(loadConfig, env);
+const runProviderConfig = (env: Record<string, string> = {}) =>
+  runConfig(loadLlmProviderConfig, env);
 
 function privateKeyPem(): string {
   return generateKeyPairSync("x25519")
@@ -42,53 +28,47 @@ function privateKeyPem(): string {
     .toString();
 }
 
-beforeEach(() => {
-  for (const name of EXIT_ENV) {
-    original[name] = process.env[name];
-    delete process.env[name];
-  }
-});
-
-afterEach(() => {
-  for (const name of EXIT_ENV) {
-    if (original[name] === undefined) delete process.env[name];
-    else process.env[name] = original[name];
-  }
-});
-
 describe("Exit config", () => {
   test("requires a private key", () => {
-    process.env.EXIT_RELAY_TOKEN = "relay-token";
-    expect(runExitConfig).toThrow("EXIT_PRIVATE_KEY");
+    expect(() => runExitConfig({ EXIT_RELAY_TOKEN: "relay-token" })).toThrow(
+      "EXIT_PRIVATE_KEY",
+    );
   });
 
   test("requires a relay token", () => {
-    process.env.EXIT_PRIVATE_KEY = privateKeyPem();
-    expect(runExitConfig).toThrow("EXIT_RELAY_TOKEN");
+    expect(() => runExitConfig({ EXIT_PRIVATE_KEY: privateKeyPem() })).toThrow(
+      "EXIT_RELAY_TOKEN",
+    );
   });
 
   test("rejects an invalid port", () => {
-    process.env.EXIT_PRIVATE_KEY = privateKeyPem();
-    process.env.EXIT_RELAY_TOKEN = "relay-token";
-    process.env.EXIT_PORT = "0";
-    expect(runExitConfig).toThrow();
+    expect(() =>
+      runExitConfig({
+        EXIT_PRIVATE_KEY: privateKeyPem(),
+        EXIT_RELAY_TOKEN: "relay-token",
+        EXIT_PORT: "0",
+      }),
+    ).toThrow();
   });
 
   test("rejects an invalid private key as a config error", () => {
-    process.env.EXIT_PRIVATE_KEY = "not-a-key";
-    process.env.EXIT_RELAY_TOKEN = "relay-token";
-    expect(runExitConfig).toThrow("EXIT_PRIVATE_KEY must be a valid X25519 private key");
+    expect(() =>
+      runExitConfig({
+        EXIT_PRIVATE_KEY: "not-a-key",
+        EXIT_RELAY_TOKEN: "relay-token",
+      }),
+    ).toThrow("EXIT_PRIVATE_KEY must be a valid X25519 private key");
   });
 
   test("loads a full configuration", () => {
-    process.env.EXIT_PRIVATE_KEY = privateKeyPem();
-    process.env.EXIT_RELAY_TOKEN = "relay-token";
-    process.env.EXIT_HOSTNAME = "exit.internal";
-    process.env.EXIT_PORT = "9900";
-    process.env.EXIT_KEY_ID = "rotated-key";
-    process.env.EXIT_REPLAY_MAX_ENTRIES = "3";
-
-    const config = runExitConfig();
+    const config = runExitConfig({
+      EXIT_PRIVATE_KEY: privateKeyPem(),
+      EXIT_RELAY_TOKEN: "relay-token",
+      EXIT_HOSTNAME: "exit.internal",
+      EXIT_PORT: "9900",
+      EXIT_KEY_ID: "rotated-key",
+      EXIT_REPLAY_MAX_ENTRIES: "3",
+    });
 
     expect(config.hostname).toBe("exit.internal");
     expect(config.port).toBe(9900);
@@ -100,10 +80,10 @@ describe("Exit config", () => {
   });
 
   test("defaults to the local key id and port", () => {
-    process.env.EXIT_PRIVATE_KEY = privateKeyPem();
-    process.env.EXIT_RELAY_TOKEN = "relay-token";
-
-    const config = runExitConfig();
+    const config = runExitConfig({
+      EXIT_PRIVATE_KEY: privateKeyPem(),
+      EXIT_RELAY_TOKEN: "relay-token",
+    });
 
     expect(config.port).toBe(8786);
     expect(config.hostname).toBe("127.0.0.1");
@@ -117,21 +97,26 @@ describe("LLM provider config", () => {
   });
 
   test("rejects invalid limits", () => {
-    process.env.LLM_PROVIDER_URL = "https://provider.example/v1/chat/completions";
-    process.env.LLM_PROVIDER_TIMEOUT_MS = "0";
-    expect(runProviderConfig).toThrow();
-
-    delete process.env.LLM_PROVIDER_TIMEOUT_MS;
-    process.env.LLM_MAX_RESPONSE_BYTES = "1.5";
-    expect(runProviderConfig).toThrow();
+    expect(() =>
+      runProviderConfig({
+        LLM_PROVIDER_URL: "https://provider.example/v1/chat/completions",
+        LLM_PROVIDER_TIMEOUT_MS: "0",
+      }),
+    ).toThrow();
+    expect(() =>
+      runProviderConfig({
+        LLM_PROVIDER_URL: "https://provider.example/v1/chat/completions",
+        LLM_MAX_RESPONSE_BYTES: "1.5",
+      }),
+    ).toThrow();
   });
 
   test("loads provider credentials, policy, and defaults", () => {
-    process.env.LLM_PROVIDER_URL = "https://provider.example/v1/chat/completions";
-    process.env.LLM_PROVIDER_API_KEY = "provider-token";
-    process.env.LLM_ALLOWED_MODELS = "model-one, model-two";
-
-    const config = runProviderConfig();
+    const config = runProviderConfig({
+      LLM_PROVIDER_URL: "https://provider.example/v1/chat/completions",
+      LLM_PROVIDER_API_KEY: "provider-token",
+      LLM_ALLOWED_MODELS: "model-one, model-two",
+    });
 
     expect(config.url).toEqual(new URL("https://provider.example/v1/chat/completions"));
     if (config.apiKey === undefined) throw new Error("expected a provider API key");

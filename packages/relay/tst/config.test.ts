@@ -1,46 +1,16 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { ConfigProvider, Effect, Redacted } from "effect";
 import { loadConfig } from "../src/config.ts";
 
-const runConfig = () =>
+const runConfig = (env: Record<string, string> = {}) =>
   Effect.runSync(
     loadConfig.pipe(
       Effect.provideService(
         ConfigProvider.ConfigProvider,
-        ConfigProvider.fromUnknown(process.env),
+        ConfigProvider.fromUnknown(env),
       ),
     ),
   );
-
-const RELAY_ENV = [
-  "RELAY_EXIT_TOKEN",
-  "RELAY_HOSTNAME",
-  "RELAY_PORT",
-  "RELAY_EXIT_URL",
-  "RELAY_TENANT_TOKENS",
-  "RELAY_REQUEST_TTL_MS",
-  "RELAY_REQUEST_MAX_ENTRIES",
-  "RELAY_REQUEST_MAX_ENTRIES_PER_TENANT",
-  "RELAY_MAX_ENVELOPE_BYTES",
-  "RELAY_MAX_CONCURRENT_REQUESTS",
-  "RELAY_EXIT_TIMEOUT_MS",
-] as const;
-
-const original: Record<string, string | undefined> = {};
-
-beforeEach(() => {
-  for (const name of RELAY_ENV) {
-    original[name] = process.env[name];
-    delete process.env[name];
-  }
-});
-
-afterEach(() => {
-  for (const name of RELAY_ENV) {
-    if (original[name] === undefined) delete process.env[name];
-    else process.env[name] = original[name];
-  }
-});
 
 describe("Relay config", () => {
   test("requires an exit token", () => {
@@ -48,45 +18,43 @@ describe("Relay config", () => {
   });
 
   test("requires tenant tokens", () => {
-    process.env.RELAY_EXIT_TOKEN = "exit-token";
-    expect(runConfig).toThrow("RELAY_TENANT_TOKENS");
+    expect(() => runConfig({ RELAY_EXIT_TOKEN: "exit-token" })).toThrow(
+      "RELAY_TENANT_TOKENS",
+    );
   });
 
   test("rejects malformed tenant token entries", () => {
-    process.env.RELAY_EXIT_TOKEN = "exit-token";
-    process.env.RELAY_TENANT_TOKENS = "tenant-one";
-    expect(runConfig).toThrow("RELAY_TENANT_TOKENS must use tenant:token entries");
-
-    process.env.RELAY_TENANT_TOKENS = ":token";
-    expect(runConfig).toThrow("RELAY_TENANT_TOKENS must use tenant:token entries");
-
-    process.env.RELAY_TENANT_TOKENS = "tenant-one:";
-    expect(runConfig).toThrow("RELAY_TENANT_TOKENS must use tenant:token entries");
+    for (const tokens of ["tenant-one", ":token", "tenant-one:"]) {
+      expect(() =>
+        runConfig({
+          RELAY_EXIT_TOKEN: "exit-token",
+          RELAY_TENANT_TOKENS: tokens,
+        }),
+      ).toThrow("RELAY_TENANT_TOKENS must use tenant:token entries");
+    }
   });
 
   test("rejects invalid integers", () => {
-    process.env.RELAY_EXIT_TOKEN = "exit-token";
-    process.env.RELAY_TENANT_TOKENS = "tenant-one:token";
-
-    process.env.RELAY_PORT = "0";
-    expect(runConfig).toThrow();
-
-    process.env.RELAY_PORT = "-1";
-    expect(runConfig).toThrow();
-
-    process.env.RELAY_PORT = "1.5";
-    expect(runConfig).toThrow();
+    for (const port of ["0", "-1", "1.5"]) {
+      expect(() =>
+        runConfig({
+          RELAY_EXIT_TOKEN: "exit-token",
+          RELAY_TENANT_TOKENS: "tenant-one:token",
+          RELAY_PORT: port,
+        }),
+      ).toThrow();
+    }
   });
 
   test("loads a full configuration", () => {
-    process.env.RELAY_EXIT_TOKEN = "exit-token";
-    process.env.RELAY_TENANT_TOKENS = "tenant-one:one,two:two";
-    process.env.RELAY_HOSTNAME = "relay.internal";
-    process.env.RELAY_PORT = "9000";
-    process.env.RELAY_EXIT_URL = "https://exit.internal/v1/chat/completions";
-    process.env.RELAY_MAX_CONCURRENT_REQUESTS = "7";
-
-    const config = runConfig();
+    const config = runConfig({
+      RELAY_EXIT_TOKEN: "exit-token",
+      RELAY_TENANT_TOKENS: "tenant-one:one,two:two",
+      RELAY_HOSTNAME: "relay.internal",
+      RELAY_PORT: "9000",
+      RELAY_EXIT_URL: "https://exit.internal/v1/chat/completions",
+      RELAY_MAX_CONCURRENT_REQUESTS: "7",
+    });
 
     expect(config.hostname).toBe("relay.internal");
     expect(config.port).toBe(9000);
@@ -103,10 +71,10 @@ describe("Relay config", () => {
   });
 
   test("applies default ports and URLs", () => {
-    process.env.RELAY_EXIT_TOKEN = "exit-token";
-    process.env.RELAY_TENANT_TOKENS = "tenant-one:one";
-
-    const config = runConfig();
+    const config = runConfig({
+      RELAY_EXIT_TOKEN: "exit-token",
+      RELAY_TENANT_TOKENS: "tenant-one:one",
+    });
 
     expect(config.port).toBe(8787);
     expect(config.hostname).toBe("127.0.0.1");
