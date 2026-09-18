@@ -9,6 +9,7 @@ Web Streams, and `Bun.serve` remain the external adapters.
 ```text
 Sidecar runtime
   Sidecar request handler -> RelayClient -> RelayTransport
+  DefectReporter
 
 Relay runtime
   Relay request handler -> TenantAuthenticator
@@ -16,20 +17,25 @@ Relay runtime
                         -> ConcurrencyLimiter
                         -> ExitClient -> ExitTransport
                         -> RelayObserver
+  DefectReporter
 
 Exit runtime
   Exit request handler -> ReplayProtection -> Clock
                        -> LlmProvider
+  DefectReporter
 
 Exit application composition
   OpenAI-compatible LlmProvider -> ProviderTransport
 
 Mock provider runtime
   Mock provider request handler
+  DefectReporter
 ```
 
-Server configuration contains data such as addresses, service credentials,
-limits, and cache policy. It does not contain live service implementations.
+Effect `Config` loads addresses, service credentials, limits, cache policy, and
+debug logging. Credentials stay in `Redacted` values until an HTTP or crypto
+boundary needs plaintext. Key parsing failures use typed configuration errors.
+Server configuration does not contain live service implementations.
 Each server has one production Layer constructor, and tests replace that Layer
 when they need a fake provider, transport, clock, authenticator, tracker,
 observer, or replay protection. Pure validation, sanitization, authentication
@@ -43,22 +49,23 @@ point is the only module that loads the default OpenAI-compatible provider and
 combines its Layer with the Exit replay Layer. A different provider can replace
 that Layer without changing `ExitConfig`, `exit.ts`, or the request handler.
 
-The three outbound HTTP adapters receive their fetch and timeout behavior from
-transport Layers. Relay test observations also come from a Layer, with a no-op
-implementation in production. This leaves one dependency-injection mechanism
-for request processing. Replay expiry reads Effect's `Clock`, so tests can move
-time without adding clock callbacks to production classes. Stateful replay and
-request-tracking services allocate their caches when each Layer is built, so
-separate server runtimes never share replay state.
+The three outbound HTTP adapters receive `fetch` from transport Layers. Effect
+fibers own their deadlines and cancellation. Relay test observations also come
+from a Layer, with a no-op implementation in production. This leaves one
+dependency-injection mechanism for request processing. Replay expiry reads
+Effect's `Clock`, so tests can move time without adding clock callbacks to
+production classes. Stateful replay and request-tracking services allocate
+their caches when each Layer is built, so separate server runtimes never share
+replay state.
 
 ## Runtime boundary
 
 Each `create*Server` function builds one `ManagedRuntime` and reuses it for all
 requests. The Bun `fetch` callback runs one request Effect with the incoming
-request signal. A shared, idempotent lifecycle helper stops the Bun server and
-then disposes the runtime. It still attempts runtime disposal if Bun shutdown
-fails. Signal handlers await that sequence and record a controlled
-`shutdown.failed` event if disposal fails.
+request signal. Each application loads configuration and builds its Layers as
+an Effect. The process runner acquires the server in an Effect scope, waits for
+`SIGINT` or `SIGTERM`, then stops Bun and disposes the managed runtime. The
+idempotent server finalizer still disposes the runtime if Bun shutdown fails.
 
 ```text
 Bun HTTP adapter
@@ -81,11 +88,11 @@ Request programs return Fetch `Response` values. Expected failures stay in the
 typed error channel until one HTTP translation function converts them to the
 existing status, public message, and OpenAI-compatible error type. A defect is
 converted only at that outer boundary and always uses the component's generic
-500 response. The server records a random incident ID, component name, and
-`request.defect` event before returning that response. The diagnostic reporter
-never receives the cause object, so exception messages, ciphertext validation
-details, plaintext, credentials, and keys cannot enter the default defect log.
-Request interruption is not reported as a defect.
+500 response. The injected `DefectReporter` records a random incident ID,
+component name, and `request.defect` event before the server returns that
+response. The reporter never receives the cause object, so exception messages,
+ciphertext validation details, plaintext, credentials, and keys cannot enter
+the default defect log. Request interruption is not reported as a defect.
 
 ## Error taxonomy
 
@@ -129,21 +136,21 @@ AI SDK disconnect
 
 `Effect.tryPromise` receives the fiber's `AbortSignal`, so interrupting a
 request aborts the matching downstream fetch. Provider and service fetches
-combine that signal with the client signal and an injected timeout signal. The
-timeout stays attached after response headers arrive, which preserves the
-existing limit across streamed response bodies. Tests control the timeout with
-an injected `AbortController`. Stream adapters stay pull-based to preserve Web
-Stream backpressure. Web Stream code owns its readers and finalizers. Success,
-failure, and downstream cancellation release locks, cancel unfinished upstream
-bodies, and return Relay concurrency permits exactly once.
+combine that signal with the client signal and an Effect-managed deadline. The
+deadline fiber stays attached to the returned body after response headers
+arrive. The Web Stream finalizer interrupts it when the body ends or the
+consumer cancels. Stream adapters stay pull-based to preserve backpressure.
+They own their readers and finalizers. Success, failure, and downstream
+cancellation release locks, cancel unfinished upstream bodies, and return
+Relay concurrency permits exactly once.
 
 ## Logging
 
-The existing privacy-aware debug logger remains the request log sink because its
-views enforce the current trust boundaries. Relay debug records may contain
-tenant identity but never plaintext. Exit debug records may contain request
-content but never tenant identity. No trace context is forwarded between Relay
-and Exit.
+Effect `Config` controls the privacy-aware debug logger. The logger remains the
+request log sink because its views enforce the current trust boundaries. Relay
+debug records may contain tenant identity but never plaintext. Exit debug
+records may contain request content but never tenant identity. No trace context
+is forwarded between Relay and Exit.
 
 The request programs do not add Effect log annotations or spans. Those records
 had no configured sink and added work without changing the current debug logs.
@@ -154,7 +161,16 @@ policy for the metadata each machine may export.
 
 `packages/protocol` remains unchanged and has no Effect dependency. HPKE, wire
 parsers, padding, frame authentication, response metadata, and bounded protocol
-helpers retain their current APIs and byte behavior. Fetch objects and Web
-Streams remain at network boundaries. Request sanitization, constant-time token
-comparison, byte queues, and deterministic mock response construction stay
-plain where Effect would only add ceremony.
+helpers retain their current APIs and byte behavior.
+
+Fetch objects, Bun servers, and Web Streams remain network adapters. Response
+streams outlive the request Effect after Bun sends headers, so their pull,
+backpressure, cancellation, and reader cleanup stay in the Web Stream API. The
+Relay's fail-fast concurrency permit is released by that stream finalizer for
+the same reason. Response coalescing keeps its native timer beside the pending
+`reader.read()` race instead of starting a new Effect runtime on every pull.
+
+Request sanitization, constant-time token comparison, byte queues, and
+deterministic mock response construction remain plain functions. They have no
+dependencies, asynchronous lifetime, or typed operational failures for Effect
+to manage.

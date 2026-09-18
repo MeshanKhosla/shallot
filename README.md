@@ -27,8 +27,8 @@ The Sidecar, Relay, Exit, and mock provider run request programs on Effect 4 RC.
 Each process builds one managed runtime and reuses it across requests. Bun still
 owns the HTTP socket, and Fetch requests, responses, abort signals, and Web
 Streams remain the network boundary. Expected operational failures are tagged
-and translated once at that boundary. Server shutdown interrupts active Effect
-fibers and disposes the runtime.
+and translated once at that boundary. Effect loads configuration, redacts
+credentials, manages outbound deadlines, and owns the scoped server lifetime.
 
 The protocol package has no Effect dependency. Its HPKE operations, wire
 validators, padding, framing, and bounded body reader remain independent.
