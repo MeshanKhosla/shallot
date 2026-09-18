@@ -23,10 +23,13 @@ import {
   exitDefectResponse,
   exitErrorResponse,
 } from "./errors.ts";
-import { LlmProvider } from "./llm-provider.ts";
+import { LlmProvider, type LlmProviderService } from "./llm-provider.ts";
 import { ReplayProtection, replayProtectionLayer } from "./replay-protection.ts";
 import { sealProviderResponse } from "./response-sealer.ts";
-import { sanitizeChatRequest } from "./sanitize-request.ts";
+import {
+  sanitizeChatRequest,
+  type SanitizedChatRequest,
+} from "./sanitize-request.ts";
 import { requireRelayAuthorization } from "./service-auth.ts";
 
 export type ExitServices = LlmProvider | ReplayProtection;
@@ -95,13 +98,14 @@ export const handleExitRequest = Effect.fn("handleExitRequest")(function* (
 
   const opened = yield* openEnvelope(envelope, config);
   const provider = yield* LlmProvider;
-  const sanitized = yield* expectedSync(
-    () => {
-      const plaintext = JSON.parse(opened.payload.toString("utf8"));
-      return sanitizeChatRequest(plaintext, provider.policy.allowedModels);
-    },
-    (cause): cause is ExitInvalidRequest => cause instanceof ExitInvalidRequest,
-  ).pipe(
+  const replayProtection = yield* ReplayProtection;
+  if (
+    !(yield* replayProtection.claim(`${envelope.keyId}:${envelope.encapsulatedKey}`))
+  ) {
+    return yield* new ExitReplayDetected();
+  }
+
+  const sanitized = yield* parseSealedPayload(opened, provider).pipe(
     Effect.tap((request) =>
       Effect.sync(() =>
         logger.debug("request.decrypted", {
@@ -123,12 +127,6 @@ export const handleExitRequest = Effect.fn("handleExitRequest")(function* (
     ),
   );
   if (sanitized instanceof Response) return sanitized;
-
-  const replayProtection = yield* ReplayProtection;
-  const replayKey = `${envelope.keyId}:${envelope.encapsulatedKey}`;
-  if (!(yield* replayProtection.claim(replayKey))) {
-    return yield* new ExitReplayDetected();
-  }
 
   const providerResponse = yield* provider
     .complete(sanitized, req.signal)
@@ -154,6 +152,29 @@ function expectedSync<A, E>(
       if (guard(cause)) return cause;
       throw cause;
     },
+  });
+}
+
+function parseSealedPayload(
+  opened: OpenedRequestContext,
+  provider: LlmProviderService,
+): Effect.Effect<SanitizedChatRequest, ExitInvalidRequest> {
+  return Effect.gen(function* () {
+    const plaintext = yield* Effect.try({
+      try: () => JSON.parse(opened.payload.toString("utf8")),
+      catch: (cause) => {
+        if (cause instanceof SyntaxError) {
+          return new ExitInvalidRequest({
+            message: "Decrypted request is not valid JSON",
+          });
+        }
+        throw cause;
+      },
+    });
+    return yield* expectedSync(
+      () => sanitizeChatRequest(plaintext, provider.policy.allowedModels),
+      (cause): cause is ExitInvalidRequest => cause instanceof ExitInvalidRequest,
+    );
   });
 }
 
