@@ -13,6 +13,8 @@ The Relay knows the tenant but cannot read the prompt. The Exit reads the prompt
 but does not receive the tenant identity. The LLM provider receives the
 sanitized plaintext request.
 
+Read the blog here https://meshan.dev/blog/coffee-codex-shallot
+
 ## Run it locally
 
 The local stack starts the Sidecar, Relay, Exit, and deterministic mock provider.
